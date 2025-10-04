@@ -12,6 +12,9 @@
 <body class="intro-active">
     <header class="topbar" role="banner" style="display:none">
         <nav class="nav" aria-label="Primary">
+            <button class="burger" id="burgerBtn" aria-label="Menu" aria-controls="menuOverlay" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
             <div class="nav-left">
                 <button class="nav-link" data-target="#paintings">PAINTINGS</button>
                 <span class="slash">/</span>
@@ -28,6 +31,26 @@
             </div>
         </nav>
     </header>
+
+    <!-- Mobile overlay menu -->
+    <div id="menuOverlay" class="menu-overlay" aria-hidden="true">
+        <div class="menu-panel">
+            <button class="menu-close" id="menuClose" aria-label="Close">×</button>
+            <div class="menu-brand" id="menuBrand">MKHEYAN</div>
+            <div class="menu-items">
+                <button class="menu-item" id="paintingsLinkMobile" data-target="#paintings">PAINTINGS</button>
+                <button class="menu-item" id="sculpturesLinkMobile" data-target="#sculptures">SCULPTURES</button>
+            </div>
+            <div class="menu-lang">
+                <label for="langSelectMobile" class="sr-only">Language</label>
+                <select id="langSelectMobile">
+                    <option value="en">EN</option>
+                    <option value="ru">RU</option>
+                    <option value="ka">KA</option>
+                </select>
+            </div>
+        </div>
+    </div>
 
     <main id="main" class="main" role="main">
         <!-- Intro Overlay -->

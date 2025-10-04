@@ -148,6 +148,29 @@
                 document.querySelector(target).scrollIntoView({ behavior: 'smooth' });
             });
         });
+        // burger / overlay
+        const overlay = qs('#menuOverlay');
+        const burger = qs('#burgerBtn');
+        const closeBtn = qs('#menuClose');
+        function openMenu(){ overlay.classList.add('open'); burger.setAttribute('aria-expanded','true'); document.body.style.overflow='hidden'; }
+        function closeMenu(){ overlay.classList.remove('open'); burger.setAttribute('aria-expanded','false'); document.body.style.overflow=''; }
+        if (burger) burger.addEventListener('click', openMenu);
+        if (closeBtn) closeBtn.addEventListener('click', closeMenu);
+        overlay?.addEventListener('click', (e) => { if (e.target.id === 'menuOverlay') closeMenu(); });
+        // mobile menu navigation and language
+        qsa('.menu-item').forEach(btn => btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-target');
+            closeMenu();
+            setTimeout(() => document.querySelector(target).scrollIntoView({ behavior: 'smooth' }), 50);
+        }));
+        const langMobile = qs('#langSelectMobile');
+        if (langMobile) {
+            langMobile.value = state.lang;
+            langMobile.addEventListener('change', () => {
+                state.lang = langMobile.value; localStorage.setItem('lang', state.lang);
+                qs('#langSelect').value = state.lang; applyI18n(); populateGalleries(); revealParallax();
+            });
+        }
     }
 
     function applyI18n() {
@@ -158,6 +181,15 @@
         if (navLinks[0]) navLinks[0].textContent = t.paintingsNav;
         if (navLinks[1]) navLinks[1].textContent = t.sculpturesNav;
         qs('.brand').textContent = t.brand;
+        // mobile overlay texts
+        const mb = qs('#menuBrand');
+        if (mb) mb.textContent = t.brand;
+        const mlp = qs('#paintingsLinkMobile');
+        if (mlp) mlp.textContent = t.paintingsNav;
+        const mls = qs('#sculpturesLinkMobile');
+        if (mls) mls.textContent = t.sculpturesNav;
+        const lsm = qs('#langSelectMobile');
+        if (lsm) lsm.value = state.lang;
         qs('#paintings').textContent = t.paintings;
         qs('#sculptures').textContent = t.sculptures;
         qs('#contactLink').textContent = t.contacts;
