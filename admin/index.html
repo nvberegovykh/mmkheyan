@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin — Meruzhan</title>
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <header class="admin-topbar">
+        <h1>Admin Panel</h1>
+        <nav>
+            <a href="../index.html">← Back to site</a>
+        </nav>
+    </header>
+
+    <main class="admin-main">
+        <section>
+            <h2>Content Items</h2>
+            <div class="controls">
+                <label>
+                    Type
+                    <select id="itemType">
+                        <option value="painting">Painting</option>
+                        <option value="sculpture">Sculpture</option>
+                    </select>
+                </label>
+                <label>
+                    Image file
+                    <input type="file" id="itemFile" accept="image/*">
+                </label>
+                <label>
+                    Or image URL
+                    <input type="url" id="itemUrl" placeholder="https://...">
+                </label>
+                <label>
+                    Name
+                    <input type="text" id="itemName" placeholder="Title">
+                </label>
+                <label>
+                    Description
+                    <input type="text" id="itemDesc" placeholder="Short description">
+                </label>
+                <label>
+                    Size
+                    <input type="text" id="itemSize" placeholder="e.g. 60×80 cm">
+                </label>
+                <label>
+                    Material
+                    <input type="text" id="itemMaterial" placeholder="Canvas, oil">
+                </label>
+                <label>
+                    Technique
+                    <input type="text" id="itemTechnique" placeholder="Palette knife">
+                </label>
+                <label>
+                    Owner
+                    <input type="text" id="itemOwner" placeholder="Owner or Gallery or Unknown">
+                </label>
+                <div class="actions">
+                    <button id="addItem">Add / Update</button>
+                    <button id="exportJson">Export JSON</button>
+                    <input type="file" id="importJson" accept="application/json" style="display:none">
+                    <button id="importJsonBtn">Import JSON</button>
+                    <button id="savePreview">Save to Preview</button>
+                </div>
+            </div>
+            <details class="settings">
+                <summary>Site Settings</summary>
+                <div class="controls">
+                    <label>
+                        Contacts Link
+                        <input type="text" id="contactsLink" placeholder="https://...">
+                    </label>
+                    <label>
+                        Default Language
+                        <select id="defaultLang">
+                            <option value="en">EN</option>
+                            <option value="ru">RU</option>
+                            <option value="ka">KA</option>
+                        </select>
+                    </label>
+                    <label>
+                        Auto-translate artwork info
+                        <select id="autoTranslate">
+                            <option value="off">Off</option>
+                            <option value="on">On</option>
+                        </select>
+                    </label>
+                </div>
+            </details>
+            <div id="itemsList" class="items-list"></div>
+        </section>
+        <section>
+            <h2>Utilities</h2>
+            <div class="controls">
+                <button id="clearPreview">Clear Preview (local)</button>
+                <button id="reorderAlpha">Reorder A→Z by Name</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="../data.js"></script>
+    <script src="admin.js"></script>
+    </body>
+    </html>
+
+

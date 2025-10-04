@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Meruzhan Mkheyan</title>
+    <meta name="description" content="Official website of Georgian artist Meruzhan Mkheyan (painting, sculpture)">
+    <link rel="preload" href="lib/simvol_horseshoe.png" as="image">
+    <link rel="preload" href="lib/Meruzhan Mkheyan.png" as="image">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="intro-active">
+    <header class="topbar" role="banner" style="display:none">
+        <nav class="nav" aria-label="Primary">
+            <div class="nav-left">
+                <button class="nav-link" data-target="#paintings">PAINTINGS</button>
+                <span class="slash">/</span>
+                <button class="nav-link" data-target="#sculptures">SCULPTURES</button>
+            </div>
+            <img class="logo" src="lib/simvol_horseshoe.png" alt="Horseshoe logo">
+            <div class="brand">MERUZHAN MKHEYAN</div>
+            <div class="lang-switcher" aria-label="Language selector">
+                <select id="langSelect">
+                    <option value="en">EN</option>
+                    <option value="ru">RU</option>
+                    <option value="ka">KA</option>
+                </select>
+            </div>
+        </nav>
+    </header>
+
+    <main id="main" class="main" role="main">
+        <!-- Intro Overlay -->
+        <div id="introOverlay" class="intro-overlay" aria-label="Welcome">
+            <div class="pinned-wrapper">
+                <img id="pinnedImage" class="pinned" src="paintings/1.png" alt="Pinned artwork"/>
+                <div class="enter-hint">Click to enter</div>
+            </div>
+            <button id="enterGallery" class="sr-only">Enter Gallery</button>
+        </div>
+
+        <!-- Galleries -->
+        <section id="galleries" class="galleries">
+            <h2 id="paintings" class="section-title accent">Paintings</h2>
+            <div id="paintingsGrid" class="masonry parallax"></div>
+
+            <h2 id="sculptures" class="section-title accent">Sculptures</h2>
+            <div id="sculpturesGrid" class="masonry parallax"></div>
+        </section>
+    </main>
+
+    <div id="lightbox" class="lightbox" aria-hidden="true" role="dialog" aria-modal="true">
+        <button id="lightboxClose" class="lightbox-close" aria-label="Close">×</button>
+        <img id="lightboxImage" alt="Artwork">
+        <div id="lightboxMeta" class="lightbox-meta"></div>
+    </div>
+
+    <footer class="footer" role="contentinfo">
+        <div class="footer-inner">
+            <img class="portrait" src="lib/Meruzhan Mkheyan.png" alt="Portrait of Meruzhan Mkheyan"/>
+            <div class="legal">
+                <p id="copyright">© <span id="year"></span> Meruzhan Mkheyan</p>
+                <nav class="legal-nav" aria-label="Legal">
+                    <a href="https://www.instagram.com/mygrandpaartist/" target="_blank" rel="noopener" id="contactLink">Contacts</a>
+                    <a href="auctions.html" id="auctionsLink">Auctions</a>
+                    <a href="#" id="privacyLink">Data Privacy</a>
+                    <a href="#" id="termsLink">Terms of Use</a>
+                </nav>
+            </div>
+        </div>
+    </footer>
+
+    <script src="i18n.js"></script>
+    <script src="translate.js"></script>
+    <script src="data.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
+
+

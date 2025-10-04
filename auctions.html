@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Auctions — MKHEYAN</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .auction-page { max-width: 1100px; margin: 4rem auto; padding: 0 20px; }
+        .auction-header { display:flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .register { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+        .register input { padding: 8px 10px; border:1px solid #ccc; border-radius:8px; }
+        .register button { padding: 10px 14px; border-radius: 8px; background: #111; color: #fff; border: none; cursor: pointer; }
+        .lots { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 24px; margin-top: 24px; }
+        .lot { background: #fff; border:1px solid #e9e9e9; border-radius: 10px; overflow: hidden; }
+        .lot img { width: 100%; height: 200px; object-fit: contain; background: #fafafa; }
+        .lot .meta { padding: 12px; display:grid; gap:8px; }
+        .bid { display:flex; gap:8px; }
+        .bid input { flex:1; padding: 8px 10px; border:1px solid #ccc; border-radius:8px; }
+        .bid button { padding: 10px 12px; border-radius:8px; background:#111; color:#fff; border:none; cursor:pointer; }
+        .note { font-size: 12px; color: #555; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <main class="auction-page">
+        <div class="auction-header">
+            <h1>Auctions</h1>
+            <div class="register">
+                <input type="text" id="regName" placeholder="Name">
+                <input type="email" id="regEmail" placeholder="Email">
+                <button id="saveReg">Register</button>
+                <span id="regStatus" class="note"></span>
+            </div>
+        </div>
+        <p class="note">Temporary registration is stored in your browser only. For production, we will connect secure storage.</p>
+        <section class="lots" id="lots"></section>
+        <p><a href="index.html">← Back to site</a></p>
+    </main>
+
+    <script>
+    (function(){
+        const lots = [
+            { id: 'lot1', src: 'paintings/2.png', title: 'Untitled (Painting 2)', starting: 100 },
+            { id: 'lot2', src: 'sculptures/3.png', title: 'Untitled (Sculpture 3)', starting: 200 }
+        ];
+
+        const qs = (s, e) => (e||document).querySelector(s);
+        const qsa = (s, e) => Array.from((e||document).querySelectorAll(s));
+
+        function loadUser(){
+            try { return JSON.parse(localStorage.getItem('auction_user')||'{}'); } catch { return {}; }
+        }
+        function saveUser(u){ localStorage.setItem('auction_user', JSON.stringify(u)); }
+        function loadBids(){
+            try { return JSON.parse(localStorage.getItem('auction_bids')||'{}'); } catch { return {}; }
+        }
+        function saveBids(b){ localStorage.setItem('auction_bids', JSON.stringify(b)); }
+
+        function renderLots(){
+            const container = qs('#lots');
+            container.innerHTML = '';
+            const bids = loadBids();
+            lots.forEach(l => {
+                const highest = Math.max(l.starting, ...(bids[l.id]?.map(b=>b.amount)||[]));
+                const el = document.createElement('div');
+                el.className = 'lot';
+                el.innerHTML = `
+                    <img src="${l.src}" alt="${l.title}">
+                    <div class="meta">
+                        <strong>${l.title}</strong>
+                        <div>Highest bid: <span id="hb-${l.id}">${highest}</span> USD</div>
+                        <div class="bid">
+                            <input type="number" min="0" step="1" id="amt-${l.id}" placeholder="Your bid (USD)">
+                            <button data-lot="${l.id}">Place bid</button>
+                        </div>
+                        <div class="note">Starting price: ${l.starting} USD</div>
+                    </div>`;
+                container.appendChild(el);
+            });
+            qsa('.bid button').forEach(btn => btn.addEventListener('click', onBid));
+        }
+
+        function onBid(e){
+            const lotId = e.currentTarget.getAttribute('data-lot');
+            const amount = parseFloat(qs('#amt-'+lotId).value);
+            const user = loadUser();
+            if (!user.name || !user.email) { alert('Please register your name and email first.'); return; }
+            if (!Number.isFinite(amount) || amount <= 0) { alert('Enter a valid bid amount.'); return; }
+            const bids = loadBids();
+            bids[lotId] = bids[lotId] || [];
+            bids[lotId].push({ amount, at: Date.now(), user });
+            saveBids(bids);
+            const highest = Math.max(...bids[lotId].map(b=>b.amount));
+            qs('#hb-'+lotId).textContent = highest;
+            qs('#amt-'+lotId).value = '';
+            alert('Bid placed.');
+        }
+
+        function wireReg(){
+            const user = loadUser();
+            if (user.name) qs('#regName').value = user.name;
+            if (user.email) qs('#regEmail').value = user.email;
+            if (user.name || user.email) qs('#regStatus').textContent = 'Registered locally';
+            qs('#saveReg').addEventListener('click', () => {
+                const name = qs('#regName').value.trim();
+                const email = qs('#regEmail').value.trim();
+                if (!name || !email) { alert('Name and email are required.'); return; }
+                saveUser({ name, email });
+                qs('#regStatus').textContent = 'Registered locally';
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', () => { wireReg(); renderLots(); });
+    })();
+    </script>
+</body>
+</html>
+
+
+
