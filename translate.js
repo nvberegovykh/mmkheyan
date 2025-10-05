@@ -3,8 +3,11 @@
     const cache = {};
     function save(key, value){ cache[key] = value; }
 
+    const useProxy = /github\.io$/.test(location.hostname);
+    const proxy = (url) => useProxy ? 'https://cors.isomorphic-git.org/' + url : url;
+
     async function googleTranslate(text, targetLang){
-        const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(text);
+        const url = proxy('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(text));
         const res = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
         if (!res.ok) throw new Error('google-fail');
         const data = await res.json();
@@ -12,7 +15,7 @@
     }
 
     async function myMemoryTranslate(text, targetLang){
-        const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + encodeURIComponent('auto|' + targetLang);
+        const url = proxy('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + encodeURIComponent('auto|' + targetLang));
         const res = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
         if (!res.ok) throw new Error('mymemory-fail');
         const data = await res.json();
@@ -39,7 +42,21 @@
                 save(key, out);
                 return out;
             } catch {
-                return text; // last resort
+                try {
+                    const libreUrl = useProxy ? 'https://cors.isomorphic-git.org/https://libretranslate.de/translate' : 'https://libretranslate.de/translate';
+                    const res = await fetch(libreUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept':'application/json' },
+                        body: JSON.stringify({ q: text, source: 'auto', target: targetLang, format: 'text' })
+                    });
+                    if (!res.ok) throw new Error('libre-fail');
+                    const data = await res.json();
+                    const out = data.translatedText || text;
+                    save(key, out);
+                    return out;
+                } catch {
+                    return text; // last resort
+                }
             }
         }
     }

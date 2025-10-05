@@ -10,6 +10,43 @@
         editingType: 'painting'
     };
 
+    // ---- File System Access helpers (optional, Chromium browsers) ----
+    async function ensureSiteRoot() {
+        if (!('showDirectoryPicker' in window)) return null;
+        if (window.__siteRootHandle) return window.__siteRootHandle;
+        try {
+            const handle = await window.showDirectoryPicker({ id: 'site-root' });
+            window.__siteRootHandle = handle;
+            return handle;
+        } catch {
+            return null;
+        }
+    }
+
+    function slugify(name) {
+        const dot = name.lastIndexOf('.')
+        const ext = dot >= 0 ? name.slice(dot) : '';
+        const base = (dot >= 0 ? name.slice(0, dot) : name)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        const rand = Math.random().toString(36).slice(2,7);
+        return `${base || 'item'}-${rand}${ext || '.png'}`;
+    }
+
+    async function saveUploadedFileToSite(type, file) {
+        const root = await ensureSiteRoot();
+        if (!root) return null;
+        const dirName = type === 'painting' ? 'paintings' : 'sculptures';
+        const sub = await root.getDirectoryHandle(dirName, { create: true });
+        const fileName = slugify(file.name || `${type}.png`);
+        const fh = await sub.getFileHandle(fileName, { create: true });
+        const writable = await fh.createWritable();
+        await writable.write(file);
+        await writable.close();
+        return `${dirName}/${fileName}`;
+    }
+
     function render() {
         const itemsList = qs('#itemsList');
         itemsList.innerHTML = '';
@@ -118,9 +155,16 @@
 
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
-            const reader = new FileReader();
-            reader.onload = () => upsert(reader.result);
-            reader.readAsDataURL(file);
+            // Try to save into site folders using File System Access
+            saveUploadedFileToSite(type, file).then((savedPath) => {
+                if (savedPath) {
+                    upsert(savedPath);
+                } else {
+                    const reader = new FileReader();
+                    reader.onload = () => upsert(reader.result);
+                    reader.readAsDataURL(file);
+                }
+            });
         } else if (urlInput.value.trim()) {
             upsert(urlInput.value.trim());
         } else {
@@ -172,7 +216,7 @@
         });
         // Single Save: update preview AND download content.json for your repo
         const saveAllBtn = qs('#saveAll');
-        if (saveAllBtn) saveAllBtn.addEventListener('click', () => {
+        if (saveAllBtn) saveAllBtn.addEventListener('click', async () => {
             const data = {
                 paintings: state.paintings.map(({type, ...rest}) => rest),
                 sculptures: state.sculptures.map(({type, ...rest}) => rest),
@@ -182,17 +226,42 @@
                     autoTranslate: qs('#autoTranslate').value === 'on'
                 }
             };
-            // Update local preview so you can immediately see site changes during dev
+            // Update local preview for instant verification
             try { localStorage.setItem('content_draft', JSON.stringify(data)); } catch {}
-            // Also download content.json to drop into the project (single click flow)
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'content.json';
-            a.click();
-            URL.revokeObjectURL(url);
-            alert('Saved. Place the downloaded content.json in the site folder to publish to everyone.');
+
+            // Try to write directly into the site folder using File System Access API
+            try {
+                const root = await ensureSiteRoot();
+                if (root) {
+                    const fh = await root.getFileHandle('content.json', { create: true });
+                    const writable = await fh.createWritable();
+                    await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+                    await writable.close();
+                    alert('Saved content.json in site root. Reload the site to apply.');
+                    return;
+                } else if ('showSaveFilePicker' in window) {
+                    const handle = await window.showSaveFilePicker({ suggestedName: 'content.json' });
+                    const writable = await handle.createWritable();
+                    await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+                    await writable.close();
+                    alert('Saved to chosen file.');
+                    return;
+                }
+            } catch (e) {
+                console.warn('Direct file save not permitted', e);
+            }
+
+            // Fallback: download the file (if direct save denied)
+            try {
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'content.json';
+                a.click();
+                URL.revokeObjectURL(url);
+                alert('Download complete. Replace content.json in the site folder.');
+            } catch {}
         });
 
         // utilities
