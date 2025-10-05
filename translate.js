@@ -10,7 +10,7 @@
 
     async function googleTranslate(text, targetLang){
         const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(text);
-        const res = await fetch(url, { mode: 'cors' });
+        const res = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
         if (!res.ok) throw new Error('google-fail');
         const data = await res.json();
         return (data && data[0]) ? data[0].map(p => p[0]).join('') : text;
@@ -18,7 +18,7 @@
 
     async function myMemoryTranslate(text, targetLang){
         const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + encodeURIComponent('auto|' + targetLang);
-        const res = await fetch(url, { mode: 'cors' });
+        const res = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
         if (!res.ok) throw new Error('mymemory-fail');
         const data = await res.json();
         return (data && data.responseData && data.responseData.translatedText) ? data.responseData.translatedText : text;
@@ -29,12 +29,18 @@
         const key = targetLang + ':' + text;
         if (cache[key]) return cache[key];
         try {
-            const out = await googleTranslate(text, targetLang);
+            const out = await Promise.race([
+                googleTranslate(text, targetLang),
+                new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')), 2500))
+            ]);
             save(key, out);
             return out;
         } catch (e) {
             try {
-                const out = await myMemoryTranslate(text, targetLang);
+                const out = await Promise.race([
+                    myMemoryTranslate(text, targetLang),
+                    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout2')), 3000))
+                ]);
                 save(key, out);
                 return out;
             } catch {
