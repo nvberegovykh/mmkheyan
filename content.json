@@ -1,0 +1,22 @@
+{
+  "settings": {
+    "contacts": "https://www.instagram.com/mygrandpaartist/",
+    "defaultLang": "en",
+    "autoTranslate": true
+  },
+  "paintings": [
+    { "src": "paintings/1.png", "name": "Painting 1" },
+    { "src": "paintings/2.png", "name": "Painting 2" },
+    { "src": "paintings/3.png", "name": "Painting 3" },
+    { "src": "paintings/Дыхание весны.png", "name": "Дыхание весны" }
+  ],
+  "sculptures": [
+    { "src": "sculptures/1.png", "name": "Sculpture 1" },
+    { "src": "sculptures/2.png", "name": "Sculpture 2" },
+    { "src": "sculptures/3.png", "name": "Sculpture 3" },
+    { "src": "sculptures/4.png", "name": "Sculpture 4" },
+    { "src": "sculptures/Медаль.png", "name": "Медаль" }
+  ]
+}
+
+

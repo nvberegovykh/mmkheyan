@@ -184,6 +184,27 @@
             alert('Saved to preview. Open the website to see changes.');
         });
 
+        // Save directly to content.json (download) so you can replace the file in the repo
+        const saveToJsonBtn = qs('#saveToJson');
+        if (saveToJsonBtn) saveToJsonBtn.addEventListener('click', () => {
+            const data = {
+                paintings: state.paintings.map(({type, ...rest}) => rest),
+                sculptures: state.sculptures.map(({type, ...rest}) => rest),
+                settings: {
+                    contacts: qs('#contactsLink').value.trim() || 'https://www.instagram.com/mygrandpaartist/',
+                    defaultLang: qs('#defaultLang').value,
+                    autoTranslate: qs('#autoTranslate').value === 'on'
+                }
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'content.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
         // utilities
         const clearBtn = qs('#clearPreview');
         if (clearBtn) clearBtn.addEventListener('click', () => {

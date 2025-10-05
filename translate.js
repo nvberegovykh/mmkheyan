@@ -1,12 +1,7 @@
 (function(){
-    const CACHE_KEY = 'translation_cache_v2';
-    let cache = {};
-    try { cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { cache = {}; }
-
-    function save(key, value){
-        cache[key] = value;
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch {}
-    }
+    // In-memory cache only (no local persistence)
+    const cache = {};
+    function save(key, value){ cache[key] = value; }
 
     async function googleTranslate(text, targetLang){
         const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(targetLang) + '&dt=t&q=' + encodeURIComponent(text);
