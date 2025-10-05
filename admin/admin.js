@@ -237,31 +237,17 @@
                     const writable = await fh.createWritable();
                     await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
                     await writable.close();
-                    alert('Saved content.json in site root. Reload the site to apply.');
                     return;
                 } else if ('showSaveFilePicker' in window) {
                     const handle = await window.showSaveFilePicker({ suggestedName: 'content.json' });
                     const writable = await handle.createWritable();
                     await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
                     await writable.close();
-                    alert('Saved to chosen file.');
                     return;
                 }
             } catch (e) {
-                console.warn('Direct file save not permitted', e);
+                console.warn('content.json save failed', e);
             }
-
-            // Fallback: download the file (if direct save denied)
-            try {
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'content.json';
-                a.click();
-                URL.revokeObjectURL(url);
-                alert('Download complete. Replace content.json in the site folder.');
-            } catch {}
         });
 
         // utilities
@@ -269,7 +255,6 @@
         if (clearBtn) clearBtn.addEventListener('click', () => {
             if (confirm('Clear local preview content?')) {
                 localStorage.removeItem('content_draft');
-                alert('Preview cleared. Reload to use built-in content.');
             }
         });
         const reorderBtn = qs('#reorderAlpha');
