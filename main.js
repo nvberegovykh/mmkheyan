@@ -63,21 +63,25 @@
             desc.className = 'desc';
             desc.textContent = item.description;
             meta.appendChild(desc);
-            if (state.autoTranslate && window.TRANSLATE && state.lang) {
-                TRANSLATE.translateText(desc.textContent, state.lang).then(t => { if (desc.isConnected) desc.textContent = t; }).catch(()=>{});
-            }
         }
         card.appendChild(img);
         card.appendChild(meta);
         card.addEventListener('click', () => openLightbox(item));
-        // apply auto-translation if enabled (non-blocking)
+        // apply auto-translation only to title (non-blocking)
         if (state.autoTranslate && window.TRANSLATE) {
             const lang = state.lang;
             if (lang) {
-                const original = titleEl.textContent;
-                TRANSLATE.translateText(original, lang).then(t => {
-                    if (titleEl.isConnected) titleEl.textContent = t;
-                }).catch(()=>{});
+                if (item.name) {
+                    TRANSLATE.translateText(item.name, lang).then(t => {
+                        if (titleEl.isConnected) titleEl.textContent = t;
+                    }).catch(()=>{});
+                }
+                if (item.description && meta.querySelector('.desc')) {
+                    const descEl = meta.querySelector('.desc');
+                    TRANSLATE.translateText(item.description, lang).then(t => {
+                        if (descEl && descEl.isConnected) descEl.textContent = t;
+                    }).catch(()=>{});
+                }
             }
         }
         return card;
