@@ -170,7 +170,9 @@
         importInput.addEventListener('change', () => {
             if (importInput.files && importInput.files[0]) importJson(importInput.files[0]);
         });
-        qs('#savePreview').addEventListener('click', () => {
+        // Single Save: update preview AND download content.json for your repo
+        const saveAllBtn = qs('#saveAll');
+        if (saveAllBtn) saveAllBtn.addEventListener('click', () => {
             const data = {
                 paintings: state.paintings.map(({type, ...rest}) => rest),
                 sculptures: state.sculptures.map(({type, ...rest}) => rest),
@@ -180,22 +182,9 @@
                     autoTranslate: qs('#autoTranslate').value === 'on'
                 }
             };
-            localStorage.setItem('content_draft', JSON.stringify(data));
-            alert('Saved to preview. Open the website to see changes.');
-        });
-
-        // Save directly to content.json (download) so you can replace the file in the repo
-        const saveToJsonBtn = qs('#saveToJson');
-        if (saveToJsonBtn) saveToJsonBtn.addEventListener('click', () => {
-            const data = {
-                paintings: state.paintings.map(({type, ...rest}) => rest),
-                sculptures: state.sculptures.map(({type, ...rest}) => rest),
-                settings: {
-                    contacts: qs('#contactsLink').value.trim() || 'https://www.instagram.com/mygrandpaartist/',
-                    defaultLang: qs('#defaultLang').value,
-                    autoTranslate: qs('#autoTranslate').value === 'on'
-                }
-            };
+            // Update local preview so you can immediately see site changes during dev
+            try { localStorage.setItem('content_draft', JSON.stringify(data)); } catch {}
+            // Also download content.json to drop into the project (single click flow)
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -203,6 +192,7 @@
             a.download = 'content.json';
             a.click();
             URL.revokeObjectURL(url);
+            alert('Saved. Place the downloaded content.json in the site folder to publish to everyone.');
         });
 
         // utilities
