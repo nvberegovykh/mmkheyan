@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin — Meruzhan</title>
+    <title>Admin — Meruzhan Mkheyan</title>
     <link rel="stylesheet" href="admin.css">
 </head>
 <body>
@@ -11,13 +11,37 @@
         <h1>Admin Panel</h1>
         <nav>
             <a href="../index.html">← Back to site</a>
+            <button id="logoutBtn" class="secondary" style="display:none; margin-left:10px;">Log out</button>
         </nav>
     </header>
 
-    <main class="admin-main">
+    <!-- Login gate -->
+    <main id="loginScreen" class="admin-main">
+        <section>
+            <h2>Sign in</h2>
+            <form id="loginForm" class="controls" style="max-width:360px;">
+                <label>
+                    Email
+                    <input type="email" id="loginEmail" autocomplete="username" required>
+                </label>
+                <label>
+                    Password
+                    <input type="password" id="loginPassword" autocomplete="current-password" required>
+                </label>
+                <div class="actions">
+                    <button type="submit">Log in</button>
+                </div>
+                <div id="loginError" style="color:#b00020; font-size:13px;"></div>
+            </form>
+        </section>
+    </main>
+
+    <!-- Admin content (shown after auth) -->
+    <main id="adminMain" class="admin-main" style="display:none;">
         <section>
             <h2>Content Items</h2>
-            <div class="controls">
+            <p class="note">Uploaded images are automatically saved to the gallery and get an invisible watermark baked in — no visible mark, but ownership is embedded in the pixel data.</p>
+            <form id="itemForm" class="controls">
                 <label>
                     Type
                     <select id="itemType">
@@ -58,13 +82,11 @@
                     <input type="text" id="itemOwner" placeholder="Owner or Gallery or Unknown">
                 </label>
                 <div class="actions">
-                    <button id="addItem">Add / Update</button>
-                    <button id="exportJson">Export JSON</button>
-                    <input type="file" id="importJson" accept="application/json" style="display:none">
-                    <button id="importJsonBtn">Import JSON</button>
-                    <button id="saveAll">Save</button>
+                    <button type="submit" id="addItem">Add / Update</button>
+                    <button type="button" id="cancelEdit" class="secondary" style="display:none;">Cancel edit</button>
+                    <span id="uploadStatus" class="note"></span>
                 </div>
-            </div>
+            </form>
             <details class="settings">
                 <summary>Site Settings</summary>
                 <div class="controls">
@@ -87,22 +109,20 @@
                             <option value="on">On</option>
                         </select>
                     </label>
+                    <div class="actions">
+                        <button type="button" id="saveSettings">Save Settings</button>
+                    </div>
                 </div>
             </details>
             <div id="itemsList" class="items-list"></div>
         </section>
-        <section>
-            <h2>Utilities</h2>
-            <div class="controls">
-                <button id="clearPreview">Clear Preview (local)</button>
-                <button id="reorderAlpha">Reorder A→Z by Name</button>
-            </div>
-        </section>
     </main>
 
-    <script src="../data.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="../firebase-config.js"></script>
+    <script src="watermark.js"></script>
     <script src="admin.js"></script>
-    </body>
-    </html>
-
-
+</body>
+</html>

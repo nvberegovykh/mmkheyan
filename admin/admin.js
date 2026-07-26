@@ -1,57 +1,98 @@
-/* global CONTENT */
-(function(){
+/* global firebase, WATERMARK, FIREBASE_CONFIG, CLOUDINARY_CONFIG */
+(function () {
     const qs = (sel, el) => (el || document).querySelector(sel);
     const qsa = (sel, el) => Array.from((el || document).querySelectorAll(sel));
 
+    // ---- Firebase init ----
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
     const state = {
-        paintings: (CONTENT.paintings || []).map(p => ({...p, type: 'painting'})),
-        sculptures: (CONTENT.sculptures || []).map(s => ({...s, type: 'sculpture'})),
-        editingIndex: null,
-        editingType: 'painting'
+        items: [], // live artworks from Firestore, each has .id
+        editingId: null,
+        unsub: null
     };
 
-    // ---- File System Access helpers (optional, Chromium browsers) ----
-    async function ensureSiteRoot() {
-        if (!('showDirectoryPicker' in window)) return null;
-        if (window.__siteRootHandle) return window.__siteRootHandle;
-        try {
-            const handle = await window.showDirectoryPicker({ id: 'site-root' });
-            window.__siteRootHandle = handle;
-            return handle;
-        } catch {
-            return null;
+    // ---- Auth gate ----
+    function showLogin() {
+        qs('#loginScreen').style.display = '';
+        qs('#adminMain').style.display = 'none';
+        qs('#logoutBtn').style.display = 'none';
+    }
+    function showAdmin() {
+        qs('#loginScreen').style.display = 'none';
+        qs('#adminMain').style.display = '';
+        qs('#logoutBtn').style.display = '';
+    }
+
+    auth.onAuthStateChanged((user) => {
+        if (user) {
+            showAdmin();
+            subscribeArtworks();
+            loadSettings();
+        } else {
+            showLogin();
+            if (state.unsub) { state.unsub(); state.unsub = null; }
         }
+    });
+
+    qs('#loginForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = qs('#loginEmail').value.trim();
+        const password = qs('#loginPassword').value;
+        const errEl = qs('#loginError');
+        errEl.textContent = '';
+        auth.signInWithEmailAndPassword(email, password).catch((err) => {
+            errEl.textContent = err.message || 'Login failed';
+        });
+    });
+
+    qs('#logoutBtn').addEventListener('click', () => auth.signOut());
+
+    // ---- Firestore: live artworks ----
+    function subscribeArtworks() {
+        if (state.unsub) state.unsub();
+        state.unsub = db.collection('artworks').orderBy('order', 'asc')
+            .onSnapshot((snap) => {
+                state.items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                render();
+            }, (err) => {
+                console.error('Firestore snapshot error', err);
+                qs('#uploadStatus').textContent = 'Error loading items: ' + err.message;
+            });
     }
 
-    function slugify(name) {
-        const dot = name.lastIndexOf('.')
-        const ext = dot >= 0 ? name.slice(dot) : '';
-        const base = (dot >= 0 ? name.slice(0, dot) : name)
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-        const rand = Math.random().toString(36).slice(2,7);
-        return `${base || 'item'}-${rand}${ext || '.png'}`;
+    function loadSettings() {
+        db.collection('settings').doc('site').get().then((doc) => {
+            if (doc.exists) {
+                const s = doc.data();
+                if (s.contacts) qs('#contactsLink').value = s.contacts;
+                if (s.defaultLang) qs('#defaultLang').value = s.defaultLang;
+                qs('#autoTranslate').value = s.autoTranslate === false ? 'off' : 'on';
+            }
+        }).catch(() => {});
     }
 
-    async function saveUploadedFileToSite(type, file) {
-        const root = await ensureSiteRoot();
-        if (!root) return null;
-        const dirName = type === 'painting' ? 'paintings' : 'sculptures';
-        const sub = await root.getDirectoryHandle(dirName, { create: true });
-        const fileName = slugify(file.name || `${type}.png`);
-        const fh = await sub.getFileHandle(fileName, { create: true });
-        const writable = await fh.createWritable();
-        await writable.write(file);
-        await writable.close();
-        return `${dirName}/${fileName}`;
-    }
+    qs('#saveSettings').addEventListener('click', () => {
+        const data = {
+            contacts: qs('#contactsLink').value.trim() || 'https://www.instagram.com/mygrandpaartist/',
+            defaultLang: qs('#defaultLang').value,
+            autoTranslate: qs('#autoTranslate').value === 'on'
+        };
+        db.collection('settings').doc('site').set(data).then(() => {
+            qs('#uploadStatus').textContent = 'Settings saved.';
+            setTimeout(() => { qs('#uploadStatus').textContent = ''; }, 2000);
+        }).catch((err) => {
+            qs('#uploadStatus').textContent = 'Settings save failed: ' + err.message;
+        });
+    });
 
+    // ---- Render items list ----
     function render() {
         const itemsList = qs('#itemsList');
         itemsList.innerHTML = '';
-        const all = [...state.paintings, ...state.sculptures];
-        all.forEach((item, idx) => {
+        state.items.forEach((item, idx) => {
             const card = document.createElement('div');
             card.className = 'item';
             const img = document.createElement('img');
@@ -60,7 +101,7 @@
             const meta = document.createElement('div');
             meta.className = 'meta';
             meta.innerHTML = `
-                <div class="row"><strong>${item.type}</strong><span>${item.name || ''}</span></div>
+                <div class="row"><strong>${item.type || ''}</strong><span>${item.name || ''}</span></div>
                 <div class="row"><span>Size</span><span>${item.size || ''}</span></div>
                 <div class="row"><span>Material</span><span>${item.material || ''}</span></div>
                 <div class="row"><span>Technique</span><span>${item.technique || ''}</span></div>
@@ -68,12 +109,24 @@
             `;
             const actions = document.createElement('div');
             actions.className = 'actions';
+            const upBtn = document.createElement('button');
+            upBtn.textContent = '↑';
+            upBtn.title = 'Move up';
+            upBtn.disabled = idx === 0;
+            upBtn.addEventListener('click', () => moveItem(idx, -1));
+            const downBtn = document.createElement('button');
+            downBtn.textContent = '↓';
+            downBtn.title = 'Move down';
+            downBtn.disabled = idx === state.items.length - 1;
+            downBtn.addEventListener('click', () => moveItem(idx, 1));
             const editBtn = document.createElement('button');
             editBtn.textContent = 'Edit';
             editBtn.addEventListener('click', () => startEdit(item));
             const delBtn = document.createElement('button');
             delBtn.textContent = 'Delete';
             delBtn.addEventListener('click', () => removeItem(item));
+            actions.appendChild(upBtn);
+            actions.appendChild(downBtn);
             actions.appendChild(editBtn);
             actions.appendChild(delBtn);
             card.appendChild(img);
@@ -83,40 +136,83 @@
         });
     }
 
+    function moveItem(idx, dir) {
+        const other = idx + dir;
+        if (other < 0 || other >= state.items.length) return;
+        const a = state.items[idx];
+        const b = state.items[other];
+        const batch = db.batch();
+        batch.update(db.collection('artworks').doc(a.id), { order: b.order });
+        batch.update(db.collection('artworks').doc(b.id), { order: a.order });
+        batch.commit().catch((err) => alert('Reorder failed: ' + err.message));
+    }
+
     function startEdit(item) {
-        qs('#itemType').value = item.type;
+        qs('#itemType').value = item.type || 'painting';
         qs('#itemName').value = item.name || '';
         qs('#itemSize').value = item.size || '';
         qs('#itemDesc').value = item.description || '';
         qs('#itemMaterial').value = item.material || '';
         qs('#itemTechnique').value = item.technique || '';
         qs('#itemOwner').value = item.owner || '';
-        state.editingType = item.type;
-        const list = item.type === 'painting' ? state.paintings : state.sculptures;
-        state.editingIndex = list.findIndex(i => i.src === item.src);
+        qs('#itemUrl').value = '';
+        qs('#itemFile').value = '';
+        state.editingId = item.id;
+        qs('#cancelEdit').style.display = '';
+        qs('#addItem').textContent = 'Update';
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function removeItem(item) {
-        if (!confirm('Delete this item?')) return;
-        const list = item.type === 'painting' ? state.paintings : state.sculptures;
-        const idx = list.findIndex(i => i.src === item.src);
-        if (idx >= 0) list.splice(idx, 1);
-        render();
-        // Persist immediately so site reflects deletion after reload
-        const data = {
-            paintings: state.paintings.map(({type, ...rest}) => rest),
-            sculptures: state.sculptures.map(({type, ...rest}) => rest),
-            settings: {
-                contacts: qs('#contactsLink').value.trim() || 'https://www.instagram.com/mygrandpaartist/',
-                defaultLang: qs('#defaultLang').value,
-                autoTranslate: qs('#autoTranslate').value === 'on'
-            }
-        };
-        localStorage.setItem('content_draft', JSON.stringify(data));
+    function resetForm() {
+        state.editingId = null;
+        qs('#itemForm').reset();
+        qs('#itemType').value = 'painting';
+        qs('#cancelEdit').style.display = 'none';
+        qs('#addItem').textContent = 'Add / Update';
     }
 
-    function addOrUpdate() {
+    qs('#cancelEdit').addEventListener('click', resetForm);
+
+    function removeItem(item) {
+        if (!confirm('Delete this item? This removes it from the live site.')) return;
+        db.collection('artworks').doc(item.id).delete().catch((err) => {
+            alert('Delete failed: ' + err.message);
+        });
+    }
+
+    // ---- Cloudinary upload with invisible watermark ----
+    async function uploadToCloudinary(blob) {
+        const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`;
+        const form = new FormData();
+        form.append('file', blob, 'artwork.png');
+        form.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
+        form.append('folder', CLOUDINARY_CONFIG.folder);
+        const res = await fetch(url, { method: 'POST', body: form });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error('Cloudinary upload failed: ' + text);
+        }
+        const json = await res.json();
+        return json.secure_url;
+    }
+
+    function watermarkText() {
+        return `© Meruzhan Mkheyan ${new Date().getFullYear()}`;
+    }
+
+    async function processFileToSrc(file) {
+        const status = qs('#uploadStatus');
+        status.textContent = 'Embedding watermark...';
+        const watermarked = await WATERMARK.embedWatermark(file, watermarkText());
+        status.textContent = 'Uploading...';
+        const url = await uploadToCloudinary(watermarked);
+        status.textContent = 'Uploaded.';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+        return url;
+    }
+
+    qs('#itemForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
         const type = qs('#itemType').value;
         const name = qs('#itemName').value.trim();
         const size = qs('#itemSize').value.trim();
@@ -126,164 +222,41 @@
         const owner = qs('#itemOwner').value.trim();
         const fileInput = qs('#itemFile');
         const urlInput = qs('#itemUrl');
+        const status = qs('#uploadStatus');
 
-        const targetList = type === 'painting' ? state.paintings : state.sculptures;
-
-        function makeUniqueSrc(srcBase64OrUrl) {
-            // If base64, append a short hash to reduce collisions; if URL, leave as-is
-            if (srcBase64OrUrl.startsWith('data:')) {
-                const hash = Math.random().toString(36).slice(2,8);
-                return srcBase64OrUrl + `#${hash}`;
-            }
-            return srcBase64OrUrl;
-        }
-
-        function upsert(srcRaw) {
-            const src = makeUniqueSrc(srcRaw);
-            const item = { src, name, description, size, material, technique, owner, type };
-            if (state.editingIndex != null && state.editingType === type) {
-                targetList[state.editingIndex] = item;
-            } else {
-                targetList.push(item);
-            }
-            state.editingIndex = null;
-            state.editingType = type;
-            fileInput.value = '';
-            urlInput.value = '';
-            render();
-        }
-
-        if (fileInput.files && fileInput.files[0]) {
-            const file = fileInput.files[0];
-            // Try to save into site folders using File System Access
-            saveUploadedFileToSite(type, file).then((savedPath) => {
-                if (savedPath) {
-                    upsert(savedPath);
-                } else {
-                    const reader = new FileReader();
-                    reader.onload = () => upsert(reader.result);
-                    reader.readAsDataURL(file);
-                }
-            });
-        } else if (urlInput.value.trim()) {
-            upsert(urlInput.value.trim());
-        } else {
-            // keep previous src if editing without new file
-            if (state.editingIndex != null) {
-                const prev = targetList[state.editingIndex];
-                upsert(prev.src);
-            }
-        }
-    }
-
-    function exportJson() {
-        const data = {
-            paintings: state.paintings.map(({type, ...rest}) => rest),
-            sculptures: state.sculptures.map(({type, ...rest}) => rest)
-        };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'content.json';
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-
-    function importJson(file) {
-        const reader = new FileReader();
-        reader.onload = () => {
-            try {
-                const data = JSON.parse(reader.result);
-                state.paintings = (data.paintings || []).map(p => ({...p, type: 'painting'}));
-                state.sculptures = (data.sculptures || []).map(s => ({...s, type: 'sculpture'}));
-                render();
-            } catch (e) {
-                alert('Invalid JSON');
-            }
-        };
-        reader.readAsText(file);
-    }
-
-    function wire() {
-        qs('#addItem').addEventListener('click', addOrUpdate);
-        qs('#exportJson').addEventListener('click', exportJson);
-        const importBtn = qs('#importJsonBtn');
-        const importInput = qs('#importJson');
-        importBtn.addEventListener('click', () => importInput.click());
-        importInput.addEventListener('change', () => {
-            if (importInput.files && importInput.files[0]) importJson(importInput.files[0]);
-        });
-        // Single Save: update preview AND download content.json for your repo
-        const saveAllBtn = qs('#saveAll');
-        if (saveAllBtn) saveAllBtn.addEventListener('click', async () => {
-            const data = {
-                paintings: state.paintings.map(({type, ...rest}) => rest),
-                sculptures: state.sculptures.map(({type, ...rest}) => rest),
-                settings: {
-                    contacts: qs('#contactsLink').value.trim() || 'https://www.instagram.com/mygrandpaartist/',
-                    defaultLang: qs('#defaultLang').value,
-                    autoTranslate: qs('#autoTranslate').value === 'on'
-                }
-            };
-            // Update local preview for instant verification
-            try { localStorage.setItem('content_draft', JSON.stringify(data)); } catch {}
-
-            // Try to write directly into the site folder using File System Access API
-            try {
-                const root = await ensureSiteRoot();
-                if (root) {
-                    const fh = await root.getFileHandle('content.json', { create: true });
-                    const writable = await fh.createWritable();
-                    await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-                    await writable.close();
-                    return;
-                } else if ('showSaveFilePicker' in window) {
-                    const handle = await window.showSaveFilePicker({ suggestedName: 'content.json' });
-                    const writable = await handle.createWritable();
-                    await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-                    await writable.close();
-                    return;
-                }
-            } catch (e) {
-                console.warn('content.json save failed', e);
-            }
-        });
-
-        // utilities
-        const clearBtn = qs('#clearPreview');
-        if (clearBtn) clearBtn.addEventListener('click', () => {
-            if (confirm('Clear local preview content?')) {
-                localStorage.removeItem('content_draft');
-            }
-        });
-        const reorderBtn = qs('#reorderAlpha');
-        if (reorderBtn) reorderBtn.addEventListener('click', () => {
-            state.paintings.sort((a,b) => (a.name||'').localeCompare(b.name||''));
-            state.sculptures.sort((a,b) => (a.name||'').localeCompare(b.name||''));
-            render();
-        });
-    }
-
-    function init() { 
-        // preload settings from draft if present
+        let src = null;
         try {
-            const draft = localStorage.getItem('content_draft');
-            if (draft) {
-                const data = JSON.parse(draft);
-                if (data.paintings) state.paintings = data.paintings.map(p => ({...p, type: 'painting'}));
-                if (data.sculptures) state.sculptures = data.sculptures.map(s => ({...s, type: 'sculpture'}));
-                if (data.settings) {
-                    if (data.settings.contacts) qs('#contactsLink').value = data.settings.contacts;
-                    if (data.settings.defaultLang) qs('#defaultLang').value = data.settings.defaultLang;
-                    if (typeof data.settings.autoTranslate !== 'undefined') qs('#autoTranslate').value = data.settings.autoTranslate ? 'on' : 'off';
-                }
+            if (fileInput.files && fileInput.files[0]) {
+                src = await processFileToSrc(fileInput.files[0]);
+            } else if (urlInput.value.trim()) {
+                src = urlInput.value.trim();
+            } else if (state.editingId) {
+                const existing = state.items.find(i => i.id === state.editingId);
+                src = existing ? existing.src : null;
             }
-        } catch {}
-        render();
-        wire(); 
-    }
-    window.addEventListener('DOMContentLoaded', init);
+        } catch (err) {
+            status.textContent = 'Error: ' + err.message;
+            return;
+        }
+
+        if (!src) {
+            status.textContent = 'Please choose a file or enter an image URL.';
+            return;
+        }
+
+        const data = { type, name, description, size, material, technique, owner, src };
+
+        try {
+            if (state.editingId) {
+                await db.collection('artworks').doc(state.editingId).update(data);
+            } else {
+                const maxOrder = state.items.reduce((m, it) => Math.max(m, it.order || 0), -1);
+                data.order = maxOrder + 1;
+                await db.collection('artworks').add(data);
+            }
+            resetForm();
+        } catch (err) {
+            status.textContent = 'Save failed: ' + err.message;
+        }
+    });
 })();
-
-

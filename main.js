@@ -242,38 +242,51 @@
         qsa('.parallax .card').forEach(card => card.classList.add('visible'));
     }
 
-    async function loadContent() {
-        // 1) Local draft from admin preview
+    async function loadFromFirestore() {
+        if (!window.firebase || !window.FIREBASE_CONFIG) return false;
         try {
-            const draft = localStorage.getItem('content_draft');
-            if (draft) {
-                const data = JSON.parse(draft);
-                const dp = (data.paintings || []).map(it => ({ ...it, type: 'painting' }));
-                const ds = (data.sculptures || []).map(it => ({ ...it, type: 'sculpture' }));
-                if (dp.length || ds.length) {
-                    state.paintings = dp.length ? dp : (CONTENT.paintings || []).map(it => ({ ...it, type: 'painting' }));
-                    state.sculptures = ds.length ? ds : (CONTENT.sculptures || []).map(it => ({ ...it, type: 'sculpture' }));
-                } else {
-                    // fallback if draft is empty
-                    state.paintings = (CONTENT.paintings || []).map(it => ({ ...it, type: 'painting' }));
-                    state.sculptures = (CONTENT.sculptures || []).map(it => ({ ...it, type: 'sculpture' }));
-                }
-                if (data.settings) {
-                    if (data.settings.contacts) {
-                        const link = document.getElementById('contactLink');
-                        link.href = data.settings.contacts;
-                    }
-                    if (data.settings.defaultLang && ['en','ru','ka'].includes(data.settings.defaultLang)) {
-                        state.lang = data.settings.defaultLang;
-                    }
-                    // default to ON unless explicitly disabled
-                    state.autoTranslate = data.settings.autoTranslate === false ? false : true;
-                }
-                return;
+            if (!firebase.apps || !firebase.apps.length) {
+                firebase.initializeApp(window.FIREBASE_CONFIG);
             }
+            const db = firebase.firestore();
+            const snap = await db.collection('artworks').orderBy('order', 'asc').get();
+            if (snap.empty) return false;
+            const all = snap.docs.map(d => d.data());
+            state.paintings = all.filter(it => it.type === 'painting');
+            state.sculptures = all.filter(it => it.type === 'sculpture');
+            try {
+                const settingsDoc = await db.collection('settings').doc('site').get();
+                if (settingsDoc.exists) {
+                    const s = settingsDoc.data();
+                    if (s.contacts) {
+                        const link = document.getElementById('contactLink');
+                        if (link) link.href = s.contacts;
+                    }
+                    if (s.defaultLang && ['en','ru','ka'].includes(s.defaultLang)) {
+                        state.lang = s.defaultLang;
+                    }
+                    state.autoTranslate = s.autoTranslate === false ? false : true;
+                } else {
+                    state.autoTranslate = true;
+                }
+            } catch {
+                state.autoTranslate = true;
+            }
+            return true;
+        } catch (e) {
+            console.warn('Firestore load failed, falling back', e);
+            return false;
+        }
+    }
+
+    async function loadContent() {
+        // 1) Live data from Firestore (primary source, kept in sync via admin panel)
+        try {
+            const ok = await loadFromFirestore();
+            if (ok) return;
         } catch {}
 
-        // 2) content.json if present (static deployment)
+        // 2) content.json if present (static deployment fallback)
         try {
             const res = await fetch('content.json', { cache: 'no-store' });
             if (res.ok) {
