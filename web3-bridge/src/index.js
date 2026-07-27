@@ -523,11 +523,15 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Canonicalize: strip trailing slash on non-root paths (no visible slash requirement).
-    if (url.pathname !== '/' && url.pathname.endsWith('/')) {
-      const redirectUrl = `${url.origin}${url.pathname.slice(0, -1)}${url.search}`;
-      return Response.redirect(redirectUrl, 301);
-    }
+    // NOTE: we intentionally do NOT canonicalize/strip trailing slashes here.
+    // Directory-index pages on the proxied site (e.g. /admin/index.html,
+    // reached via /admin/) commonly reference their own CSS/JS with
+    // relative paths like href="admin.css" rather than "/admin/admin.css".
+    // Browsers resolve those relative to the *current* URL's directory, so
+    // stripping the trailing slash (/admin/ -> /admin) silently changes that
+    // base directory to root and breaks every relative asset on the page
+    // (404s + MIME-type errors, as seen on the mmkheyan admin panel). Any
+    // trailing-slash normalization must happen upstream, not in this proxy.
 
     if (url.pathname === '/robots.txt') return robotsResponse(url.origin);
     if (url.pathname === '/sitemap.xml') return sitemapResponse(url.origin);

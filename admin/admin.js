@@ -3,6 +3,20 @@
     const qs = (sel, el) => (el || document).querySelector(sel);
     const qsa = (sel, el) => Array.from((el || document).querySelectorAll(sel));
 
+    // Legacy items store image paths relative to the SITE ROOT (e.g.
+    // "paintings/1.png", meant to resolve to /paintings/1.png). This admin
+    // page itself lives under /admin/, so assigning that raw string straight
+    // to an <img src> makes the browser resolve it relative to /admin/
+    // instead, producing a 404 at /admin/paintings/1.png. Root-anchor any
+    // relative path so it resolves the same regardless of which page depth
+    // it's rendered from. Absolute URLs (http(s):// or Cloudinary links) and
+    // already-rooted paths (leading "/") pass through unchanged.
+    function resolveAssetUrl(src) {
+        if (!src) return src;
+        if (/^https?:\/\//i.test(src) || src.startsWith('/') || src.startsWith('data:')) return src;
+        return '/' + src.replace(/^\.?\//, '');
+    }
+
     // ---- Firebase init ----
     firebase.initializeApp(FIREBASE_CONFIG);
     const auth = firebase.auth();
@@ -96,7 +110,7 @@
             const card = document.createElement('div');
             card.className = 'item';
             const img = document.createElement('img');
-            img.src = item.src;
+            img.src = resolveAssetUrl(item.src);
             img.alt = item.name || 'Artwork';
             const meta = document.createElement('div');
             meta.className = 'meta';
