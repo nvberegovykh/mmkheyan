@@ -265,7 +265,7 @@
         const saved = localStorage.getItem('lang');
         if (saved) state.lang = saved; else {
             const browser = (navigator.language || 'en').slice(0,2);
-            if (['en','ru','ka'].includes(browser)) state.lang = browser;
+            if (['en','ru','ka','hy'].includes(browser)) state.lang = browser;
         }
         select.value = state.lang;
         if (prev !== state.lang) {
