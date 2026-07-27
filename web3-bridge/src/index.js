@@ -478,6 +478,19 @@ async function proxyRequest(request, env, ctx, url) {
   headers.set('x-web3-bridge-for', cfg(env, 'PRIMARY_WEB3_NAME'));
 
   if (!contentType.includes('text/html')) {
+    // Keep raw artwork files out of Google/Bing Images. This is a real,
+    // meaningful download-prevention layer: image search's "View image" /
+    // download button is one of the most common ways full-resolution files
+    // leak without a visitor ever touching the actual gallery page (and
+    // therefore never hitting the right-click/drag guards in main.js).
+    // A plain per-request console.log was intentionally NOT added here --
+    // every normal thumbnail <img> load hits this exact same code path, so
+    // it can't distinguish casual browsing from an actual save attempt and
+    // would just flood the logs with noise. Real attempt signal comes from
+    // /api/track-attempt (fired only on an actual right-click/drag).
+    if (contentType.startsWith('image/')) {
+      headers.set('x-robots-tag', 'noimageindex');
+    }
     return new Response(upstreamResp.body, { status: upstreamResp.status, headers });
   }
 
@@ -521,6 +534,73 @@ function sitemapResponse(origin) {
     `  <url><loc>${origin}/</loc></url>\n` +
     `</urlset>\n`;
   return new Response(body, { headers: { 'content-type': 'application/xml; charset=utf-8' } });
+}
+
+// ---------------------------------------------------------------------------
+// Download-attempt logging: POST /api/track-attempt (public, fire-and-forget
+// beacon from main.js whenever a visitor right-clicks/drags a protected
+// artwork image), GET /api/attempts?token=<ADMIN_PURGE_TOKEN> (owner-only
+// readback). Stored as a rolling list (cap 200) in the same Cache API
+// already used for domain-resolution caching — no new infra/bindings.
+// ---------------------------------------------------------------------------
+const ATTEMPTS_CACHE_KEY = new Request('https://internal.cache/download-attempts');
+const ATTEMPTS_CACHE_MAX = 200;
+
+async function handleTrackAttempt(request, ctx) {
+  if (request.method !== 'POST') {
+    return new Response('Method Not Allowed', { status: 405, headers: { allow: 'POST' } });
+  }
+  let body;
+  try {
+    const text = await request.text();
+    if (text.length > 2000) throw new Error('payload_too_large');
+    body = JSON.parse(text);
+  } catch {
+    return new Response(null, { status: 204 }); // never let a malformed beacon surface as a client-visible error
+  }
+  const entry = {
+    action: typeof body.action === 'string' ? body.action.slice(0, 40) : 'unknown',
+    image: typeof body.image === 'string' ? body.image.slice(0, 200) : null,
+    page: typeof body.page === 'string' ? body.page.slice(0, 200) : null,
+    ts: Number.isFinite(body.ts) ? body.ts : Date.now(),
+    ip: request.headers.get('cf-connecting-ip') || null,
+    country: request.headers.get('cf-ipcountry') || null,
+    ua: (request.headers.get('user-agent') || '').slice(0, 200),
+  };
+  console.log('download_attempt', JSON.stringify(entry));
+  ctx.waitUntil((async () => {
+    const cache = caches.default;
+    let list = [];
+    const cached = await cache.match(ATTEMPTS_CACHE_KEY);
+    if (cached) {
+      try { list = await cached.json(); } catch { list = []; }
+    }
+    list.push(entry);
+    if (list.length > ATTEMPTS_CACHE_MAX) list = list.slice(list.length - ATTEMPTS_CACHE_MAX);
+    const response = new Response(JSON.stringify(list), {
+      headers: { 'content-type': 'application/json', 'cache-control': 'max-age=86400' },
+    });
+    await cache.put(ATTEMPTS_CACHE_KEY, response);
+  })());
+  return new Response(null, { status: 204 });
+}
+
+async function handleAttemptsApi(request, env, url) {
+  const token = url.searchParams.get('token');
+  const expected = cfg(env, 'ADMIN_PURGE_TOKEN');
+  if (!expected || token !== expected) {
+    return new Response(JSON.stringify({ ok: false, error: 'unauthorized' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  const cache = caches.default;
+  const cached = await cache.match(ATTEMPTS_CACHE_KEY);
+  const list = cached ? await cached.json() : [];
+  return new Response(JSON.stringify({ ok: true, count: list.length, attempts: list.slice().reverse() }, null, 2), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +655,8 @@ export default {
     if (url.pathname === '/robots.txt') return robotsResponse(url.origin);
     if (url.pathname === '/sitemap.xml') return sitemapResponse(url.origin);
     if (url.pathname === '/api/resolve') return handleResolveApi(request, env, ctx, url);
+    if (url.pathname === '/api/track-attempt') return handleTrackAttempt(request, ctx);
+    if (url.pathname === '/api/attempts') return handleAttemptsApi(request, env, url);
 
     try {
       return await proxyRequest(request, env, ctx, url);

@@ -3,6 +3,58 @@
     const qs = (sel, el) => (el || document).querySelector(sel);
     const qsa = (sel, el) => Array.from((el || document).querySelectorAll(sel));
 
+    // ---- Download deterrents for artwork images ----
+    // Browsers must always receive the raw image bytes to display them, so
+    // no client-side technique can make an image *impossible* to save (a
+    // determined visitor can still use devtools/network tab). What this
+    // does block is every casual path: right-click > Save Image As, dragging
+    // the image to the desktop, and iOS/Android long-press > Save Image.
+    // Applied to the intro artwork, every gallery thumbnail, and the
+    // full-size lightbox image (invisible per-file provenance watermarking
+    // handles the case where someone does get past this — see admin.js).
+    // Best-effort attempt log. Fires a tiny, fire-and-forget beacon to the
+    // Web3 bridge Worker (same-origin relative path) so the owner has a
+    // record of who tried to grab a full-size artwork and when. Silently
+    // no-ops when served directly from GitHub Pages (no such route there)
+    // or when the beacon fails for any reason — tracking must never be able
+    // to break the gallery itself.
+    function trackAttempt(action, label) {
+        try {
+            const payload = JSON.stringify({ action, image: label || null, page: location.pathname, ts: Date.now() });
+            if (navigator.sendBeacon) {
+                const blob = new Blob([payload], { type: 'application/json' });
+                navigator.sendBeacon('/api/track-attempt', blob);
+            } else {
+                fetch('/api/track-attempt', { method: 'POST', body: payload, headers: { 'content-type': 'application/json' }, keepalive: true }).catch(() => {});
+            }
+        } catch {}
+    }
+
+    function protectImage(img, label) {
+        img.draggable = false;
+        img.setAttribute('draggable', 'false');
+        img.addEventListener('contextmenu', (e) => { e.preventDefault(); trackAttempt('contextmenu', label || img.dataset.label); });
+        img.addEventListener('dragstart', (e) => { e.preventDefault(); trackAttempt('dragstart', label || img.dataset.label); });
+    }
+    // Wraps an image in a positioned container plus a transparent "shield"
+    // div on top of it. Right-clicks/long-presses then land on the shield
+    // (a plain <div>), so the browser never even offers an image-specific
+    // save option — it shows the generic page context menu instead, or
+    // nothing at all now that contextmenu is also preventDefault'd on it.
+    function shieldImage(img, label) {
+        protectImage(img, label);
+        const wrap = document.createElement('div');
+        wrap.className = 'artwork-shield-wrap';
+        if (img.parentNode) img.replaceWith(wrap); // in-place (e.g. static #lightboxImage)
+        wrap.appendChild(img);
+        const shield = document.createElement('div');
+        shield.className = 'artwork-shield';
+        shield.addEventListener('contextmenu', (e) => { e.preventDefault(); trackAttempt('contextmenu', label || img.dataset.label); });
+        shield.addEventListener('dragstart', (e) => { e.preventDefault(); trackAttempt('dragstart', label || img.dataset.label); });
+        wrap.appendChild(shield);
+        return wrap;
+    }
+
     const state = {
         lang: 'en',
         paintings: [],
@@ -26,6 +78,7 @@
         loader.onload = () => { pinned.src = randSrc; };
         loader.onerror = () => { pinned.src = 'paintings/1.png'; };
         loader.src = randSrc;
+        protectImage(pinned); // no shield here: the image itself is the "click to enter" trigger
         pinned.style.visibility = 'visible';
         pinned.style.opacity = '1';
         pinned.style.zIndex = '1';
@@ -64,7 +117,8 @@
             desc.textContent = item.description;
             meta.appendChild(desc);
         }
-        card.appendChild(img);
+        const shieldedImg = shieldImage(img, item.name || item.src); // click still bubbles up to the card listener below
+        card.appendChild(shieldedImg);
         card.appendChild(meta);
         card.addEventListener('click', () => openLightbox(item));
         // apply auto-translation only to title (non-blocking)
@@ -106,7 +160,9 @@
 
     async function openLightbox(item) {
         const lb = qs('#lightbox');
-        qs('#lightboxImage').src = item.src;
+        const lbImg = qs('#lightboxImage');
+        lbImg.src = item.src;
+        lbImg.dataset.label = item.name || item.src;
         const baseMeta = [
             ['title', item.name],
             ['type', item.type],
@@ -136,6 +192,7 @@
     }
 
     function wireLightbox() {
+        shieldImage(qs('#lightboxImage'), 'lightbox'); // protect the highest-resolution view; per-open label set in openLightbox
         qs('#lightboxClose').addEventListener('click', closeLightbox);
         qs('#lightbox').addEventListener('click', (e) => {
             if (e.target.id === 'lightbox') closeLightbox();

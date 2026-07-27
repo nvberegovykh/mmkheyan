@@ -56,6 +56,27 @@ body:not(.intro-active) .main { padding-top: 56px; }
 .masonry .card { position: relative; transform-style: preserve-3d; transition: transform 400ms; }
 .masonry .card:hover { transform: translateY(-4px); }
 .masonry img { width: 100%; height: auto; object-fit: contain; border-radius: 0; box-shadow: none; background: transparent; display: block; }
+
+/* Download deterrents for artwork imagery: disable right-click "save image
+   as", drag-to-desktop, iOS long-press "Save to Photos", and selection.
+   Applied to the intro artwork, gallery thumbnails, and the full-size
+   lightbox view (the highest-value target). This is a deterrent, not true
+   DRM -- see main.js for the matching JS-side guards. */
+.pinned, .masonry img, .lightbox img, .artwork-shield {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+    user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+}
+/* Transparent shield placed over each protected image so right-clicks and
+   long-presses land on a plain <div>, not an <img>, so browsers never offer
+   "Save Image As" / "Save to Photos" in the first place. */
+.artwork-shield-wrap { position: relative; }
+.artwork-shield { position: absolute; inset: 0; background: transparent; z-index: 2; }
 .masonry .meta { position: static; text-align: center; margin-top: 10px; background: transparent; padding: 0; border-radius: 0; }
 .masonry .meta .title { font-size: 14px; font-weight: 600; }
 .masonry .meta .desc { font-weight: 400; font-size: 12px; opacity: .75; margin-top: 4px; }
