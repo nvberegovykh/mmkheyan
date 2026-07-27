@@ -35,6 +35,10 @@ const DEFAULTS = {
   PROXY_MODE: 'reverse-proxy',
   SITE_TITLE: 'mmkheyan.etherlink — Official Web3 Website',
   SITE_DESCRIPTION: 'Official public website for the Freename Web3 domain mmkheyan.etherlink — the online gallery of artist Meruzhan Mkheyan.',
+  // 'visible'  = show the verification bar at the top of every page (old default)
+  // 'console'  = log verification details to the browser DevTools console only, no visible UI change
+  // 'off'      = do not surface verification info in the page at all (SEO metadata in <head> is unaffected either way)
+  BANNER_MODE: 'console',
 };
 
 function cfg(env, key) {
@@ -370,6 +374,36 @@ function buildVerificationBanner(env, resolution) {
 </div>`;
 }
 
+/**
+ * Same verification info as buildVerificationBanner(), but delivered only to
+ * the browser DevTools console instead of rendered on the visible page —
+ * for sites that want the visitor-facing UI completely untouched while still
+ * exposing the Freename verification proof to anyone who opens the console.
+ */
+function buildVerificationConsoleScript(env, resolution) {
+  const name = cfg(env, 'PRIMARY_WEB3_NAME');
+  const status = statusLabel(resolution);
+  const network = resolution && resolution.network ? resolution.network : 'n/a';
+  const tokenId = resolution && resolution.tokenId ? String(resolution.tokenId) : 'n/a';
+  const resolvedAt = resolution && resolution.proof ? resolution.proof.resolvedAt : 'n/a';
+  const payload = { name, provider: 'Freename', status, network, tokenId, resolvedAt };
+  return `
+<script>
+(function () {
+  try {
+    console.log(
+      '%c${escapeHtml(name)}%c — Verified Freename Web3 domain · %c${escapeHtml(status)}',
+      'font-weight:bold;color:#fff;background:#111;padding:2px 6px;border-radius:3px 0 0 3px;',
+      'color:#888;background:#111;padding:2px 4px;',
+      'color:#0f0;background:#111;padding:2px 6px;border-radius:0 3px 3px 0;'
+    );
+    console.log('Web3 domain verification:', ${JSON.stringify(payload)});
+  } catch (e) { /* non-fatal */ }
+})();
+</script>
+`;
+}
+
 // ---------------------------------------------------------------------------
 // Reverse proxy of the existing static site (GitHub Pages)
 // ---------------------------------------------------------------------------
@@ -412,8 +446,8 @@ async function proxyRequest(request, env, ctx, url) {
   const resolution = await resolveWithCache(cfg(env, 'PRIMARY_WEB3_NAME'), env, ctx);
   const canonicalUrl = `${url.origin}/`;
   const headInjection = buildHeadInjection(env, canonicalUrl, resolution);
-  const banner = buildVerificationBanner(env, resolution);
   const title = cfg(env, 'SITE_TITLE');
+  const bannerMode = cfg(env, 'BANNER_MODE');
 
   const rewriter = new HTMLRewriter()
     .on('title', new TitleRewriter(title))
@@ -422,8 +456,13 @@ async function proxyRequest(request, env, ctx, url) {
     .on('meta[property="og:description" i]', new RemoveElement())
     .on('meta[property="og:url" i]', new RemoveElement())
     .on('link[rel="canonical" i]', new RemoveElement())
-    .on('head', new HeadInjector(headInjection))
-    .on('body', new BodyBannerInjector(banner));
+    .on('head', new HeadInjector(headInjection));
+
+  if (bannerMode === 'visible') {
+    rewriter.on('body', new BodyBannerInjector(buildVerificationBanner(env, resolution)));
+  } else if (bannerMode !== 'off') {
+    rewriter.on('head', new HeadInjector(buildVerificationConsoleScript(env, resolution)));
+  }
 
   const rewritten = rewriter.transform(new Response(upstreamResp.body, { status: upstreamResp.status, headers }));
   return rewritten;
