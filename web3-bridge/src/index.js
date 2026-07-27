@@ -566,7 +566,11 @@ async function proxyRequest(request, env, ctx, url) {
   headers.set('x-content-type-options', 'nosniff');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
   headers.set('permissions-policy', 'geolocation=(), camera=(), microphone=()');
-  headers.set('x-web3-bridge-for', cfg(env, 'PRIMARY_WEB3_NAME'));
+  // TLS is already terminated/enforced by the Cloudflare edge in front of this
+  // Worker (workers.dev and any attached custom domain are HTTPS-only by
+  // default -- plain-HTTP requests never reach fetch() here). HSTS tells
+  // returning visitors' browsers to skip the plaintext hop entirely next time.
+  headers.set('strict-transport-security', 'max-age=63072000; includeSubDomains; preload');
 
   if (!contentType.includes('text/html')) {
     // Keep raw artwork files out of Google/Bing Images. This is a real,
@@ -585,30 +589,11 @@ async function proxyRequest(request, env, ctx, url) {
     return new Response(upstreamResp.body, { status: upstreamResp.status, headers });
   }
 
-  // HTML response: inject SEO metadata + identity banner, preserve body content.
-  const resolution = await resolveWithCache(cfg(env, 'PRIMARY_WEB3_NAME'), env, ctx);
-  const canonicalUrl = `${url.origin}/`;
-  const headInjection = buildHeadInjection(env, canonicalUrl, resolution);
-  const title = cfg(env, 'SITE_TITLE');
-  const bannerMode = cfg(env, 'BANNER_MODE');
-
-  const rewriter = new HTMLRewriter()
-    .on('title', new TitleRewriter(title))
-    .on('meta[name="description" i]', new RemoveElement())
-    .on('meta[property="og:title" i]', new RemoveElement())
-    .on('meta[property="og:description" i]', new RemoveElement())
-    .on('meta[property="og:url" i]', new RemoveElement())
-    .on('link[rel="canonical" i]', new RemoveElement())
-    .on('head', new HeadInjector(headInjection));
-
-  if (bannerMode === 'visible') {
-    rewriter.on('body', new BodyBannerInjector(buildVerificationBanner(env, resolution)));
-  } else if (bannerMode !== 'off') {
-    rewriter.on('head', new HeadInjector(buildVerificationConsoleScript(env, resolution)));
-  }
-
-  const rewritten = rewriter.transform(new Response(upstreamResp.body, { status: upstreamResp.status, headers }));
-  return rewritten;
+  // HTML response: pure pass-through. This bridge is meant to behave exactly
+  // like a normal domain in front of the real site -- no injected banners,
+  // no Web3-branding text, no overridden title/OG/JSON-LD. The upstream
+  // site's own <title>, meta tags, and markup are served completely as-is.
+  return new Response(upstreamResp.body, { status: upstreamResp.status, headers });
 }
 
 // ---------------------------------------------------------------------------
@@ -914,7 +899,7 @@ export default {
     } catch (err) {
       return new Response(
         `<!doctype html><html><head><title>${escapeHtml(cfg(env, 'SITE_TITLE'))}</title></head>` +
-        `<body><h1>${escapeHtml(cfg(env, 'PRIMARY_WEB3_NAME'))}</h1><p>The site is temporarily unavailable. Please try again shortly.</p></body></html>`,
+        `<body><p>The site is temporarily unavailable. Please try again shortly.</p></body></html>`,
         { status: 502, headers: { 'content-type': 'text/html; charset=utf-8' } },
       );
     }
