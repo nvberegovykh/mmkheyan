@@ -10,10 +10,8 @@
             sculptures: 'Sculptures',
             paintingsNav: 'PAINTINGS',
             sculpturesNav: 'SCULPTURES',
-            contacts: 'Contacts',
             privacy: 'Data Privacy',
-            terms: 'Terms of Use',
-            auctions: 'Auctions'
+            terms: 'Terms of Use'
         },
         ru: {
             title: 'Меружан Мкхеян',
@@ -23,10 +21,8 @@
             sculptures: 'Скульптура',
             paintingsNav: 'ЖИВОПИСЬ',
             sculpturesNav: 'СКУЛЬПТУРА',
-            contacts: 'Контакты',
             privacy: 'Конфиденциальность',
-            terms: 'Условия использования',
-            auctions: 'Аукцион'
+            terms: 'Условия использования'
         },
         ka: {
             title: 'მერუჟან მქჰეიანი',
@@ -36,10 +32,8 @@
             sculptures: 'ქანდაკება',
             paintingsNav: 'ფერწერა',
             sculpturesNav: 'ქანდაკება',
-            contacts: 'კონტაქტები',
             privacy: 'მონაცემთა კონფიდენციალურობა',
-            terms: 'გამოყენების პირობები',
-            auctions: 'აუქციონი'
+            terms: 'გამოყენების პირობები'
         },
         hy: {
             title: '\u0544\u0565\u0580\u0578\u0582\u056A\u0561\u0576 \u0544\u056D\u0567\u0575\u0561\u0576',
@@ -49,10 +43,8 @@
             sculptures: '\u0554\u0561\u0576\u0564\u0561\u056F\u0561\u0563\u0578\u0580\u056E\u0578\u0582\u0569\u0575\u0578\u0582\u0576',
             paintingsNav: '\u0546\u056F\u0561\u0580\u0579\u0578\u0582\u0569\u0575\u0578\u0582\u0576',
             sculpturesNav: '\u0554\u0531\u0546\u0534\u0531\u056F\u0531\u0533\u0578\u0580\u056E\u0578\u0582\u0569\u0575\u0578\u0582\u0576',
-            contacts: '\u053F\u0578\u0576\u057F\u0561\u056F\u057F\u0576\u0565\u0580',
             privacy: '\u054F\u057E\u0575\u0561\u056C\u0576\u0565\u0580\u056B \u0563\u0561\u0572\u057F\u0576\u056B\u0578\u0582\u0569\u0575\u0578\u0582\u0576',
-            terms: '\u0555\u0563\u057F\u0561\u0563\u0578\u0580\u056E\u0574\u0561\u0576 \u057A\u0561\u0575\u0574\u0561\u0576\u0576\u0565\u0580',
-            auctions: '\u0531\u0578\u0582\u056F\u0581\u056B\u0578\u0576'
+            terms: '\u0555\u0563\u057F\u0561\u0563\u0578\u0580\u056E\u0574\u0561\u0576 \u057A\u0561\u0575\u0574\u0561\u0576\u0576\u0565\u0580'
         }
     };
 })();

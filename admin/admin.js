@@ -88,7 +88,6 @@
         db.collection('settings').doc('site').get().then((doc) => {
             if (doc.exists) {
                 const s = doc.data();
-                if (s.contacts) qs('#contactsLink').value = s.contacts;
                 if (s.defaultLang) qs('#defaultLang').value = s.defaultLang;
                 qs('#autoTranslate').value = s.autoTranslate === false ? 'off' : 'on';
             }
@@ -97,7 +96,6 @@
 
     qs('#saveSettings').addEventListener('click', () => {
         const data = {
-            contacts: qs('#contactsLink').value.trim() || 'https://www.instagram.com/mygrandpaartist/',
             defaultLang: qs('#defaultLang').value,
             autoTranslate: qs('#autoTranslate').value === 'on'
         };

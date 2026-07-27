@@ -253,8 +253,6 @@
         if (lsm) lsm.value = state.lang;
         qs('#paintings').textContent = t.paintings;
         qs('#sculptures').textContent = t.sculptures;
-        qs('#contactLink').textContent = t.contacts;
-        qs('#auctionsLink').textContent = t.auctions;
         qs('#privacyLink').textContent = t.privacy;
         qs('#termsLink').textContent = t.terms;
     }
@@ -315,10 +313,6 @@
                 const settingsDoc = await db.collection('settings').doc('site').get();
                 if (settingsDoc.exists) {
                     const s = settingsDoc.data();
-                    if (s.contacts) {
-                        const link = document.getElementById('contactLink');
-                        if (link) link.href = s.contacts;
-                    }
                     if (s.defaultLang && ['en','ru','ka'].includes(s.defaultLang)) {
                         state.lang = s.defaultLang;
                     }
@@ -352,10 +346,6 @@
                 const ds = (data.sculptures || []).map(it => ({ ...it, type: 'sculpture' }));
                 state.paintings = dp.length ? dp : (CONTENT.paintings || []).map(it => ({ ...it, type: 'painting' }));
                 state.sculptures = ds.length ? ds : (CONTENT.sculptures || []).map(it => ({ ...it, type: 'sculpture' }));
-                if (data.settings && data.settings.contacts) {
-                    const link = document.getElementById('contactLink');
-                    link.href = data.settings.contacts;
-                }
                 if (data.settings) {
                     state.autoTranslate = data.settings.autoTranslate === false ? false : true;
                 } else {
