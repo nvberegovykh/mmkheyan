@@ -33,8 +33,8 @@ const DEFAULTS = {
   RESOLUTION_TTL_SECONDS: '300',
   NEGATIVE_TTL_SECONDS: '45',
   PROXY_MODE: 'reverse-proxy',
-  SITE_TITLE: 'mmkheyan.etherlink — Official Web3 Website',
-  SITE_DESCRIPTION: 'Official public website for the Freename Web3 domain mmkheyan.etherlink — the online gallery of artist Meruzhan Mkheyan.',
+  SITE_TITLE: 'Meruzhan Mkheyan — Armenian Art & Sculpture',
+  SITE_DESCRIPTION: 'Official website of Armenian artist Meruzhan Mkheyan — paintings and sculpture.',
   // 'visible'  = show the verification bar at the top of every page (old default)
   // 'console'  = log verification details to the browser DevTools console only, no visible UI change
   // 'off'      = do not surface verification info in the page at all (SEO metadata in <head> is unaffected either way)
@@ -298,22 +298,30 @@ function escapeHtml(s) {
 function buildHeadInjection(env, canonicalUrl, resolution) {
   const title = cfg(env, 'SITE_TITLE');
   const description = cfg(env, 'SITE_DESCRIPTION');
+  // The site's real identity (the artist/gallery) leads everywhere a human
+  // or a search/social crawler sees text -- title, og:title, twitter:title,
+  // and the JSON-LD WebSite's primary `name`. The Freename Web3 domain is a
+  // technology this site *uses* to also be reachable outside Freename-aware
+  // wallets/tools, not the thing the site is *about*, so it's demoted to a
+  // secondary/technical field (`alternateName`) instead of the headline --
+  // deliberately the opposite of earlier copy that led with the domain name
+  // and read like a generic "Web3 solution" product page.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: cfg(env, 'PRIMARY_WEB3_NAME'),
+    name: title,
     alternateName: `${cfg(env, 'PRIMARY_WEB3_NAME')} — Freename Web3 Domain`,
     url: canonicalUrl,
   };
   return `
 <meta name="description" content="${escapeHtml(description)}">
 <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
-<meta property="og:title" content="${escapeHtml(cfg(env, 'PRIMARY_WEB3_NAME'))}">
+<meta property="og:title" content="${escapeHtml(title)}">
 <meta property="og:description" content="${escapeHtml(description)}">
 <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="${escapeHtml(cfg(env, 'PRIMARY_WEB3_NAME'))}">
+<meta name="twitter:title" content="${escapeHtml(title)}">
 <meta name="twitter:description" content="${escapeHtml(description)}">
 <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
 <!-- mmkheyan.etherlink Web3 bridge metadata (see /web3-bridge/README.md) -->
