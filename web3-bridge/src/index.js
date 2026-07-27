@@ -29,6 +29,8 @@ const DEFAULTS = {
   PRIMARY_WEB3_NAME: 'mmkheyan.etherlink',
   WEB3_PROVIDER: 'freename',
   FREENAME_RESOLVER_URL: 'https://rslvr.freename.io/domain/resolve',
+  FREENAME_METADATA_URL: 'https://metadata.freename.io/metadata',
+  FREENAME_TOKEN_ID_MAP: '{"mmkheyan.etherlink":"99435973965421401099083769851301606992278380923010873282207282174488244868273","liber.v":"60296417392036843476361523508755008120019158044420956636222339652102709563319"}',
   UPSTREAM_ORIGIN: 'https://nvberegovykh.github.io/mmkheyan',
   RESOLUTION_TTL_SECONDS: '300',
   NEGATIVE_TTL_SECONDS: '45',
@@ -110,6 +112,13 @@ async function encodeWeb3Hostname(name, baseDomain) {
 
 const SAFE_WEBSITE_SCHEMES = new Set(['https:', 'http:', 'ipfs:', 'ipns:', 'ar:']);
 
+// Freename's own default "Web3 Landing Page" IP. Every freshly-minted domain ships with
+// record.A.0 pre-set to this value (see https://freename.com/blog/set-a-record-freename-domains).
+// It is not a customer-configured target, so it must never be surfaced as "this domain
+// resolves to a website" — otherwise every unconfigured Freename domain would falsely
+// report itself as resolved.
+const FREENAME_DEFAULT_LANDING_IP = '34.22.218.54';
+
 function pickWebsiteRecord(records) {
   const byKey = (k) => records.find((r) => r.key === k || r.type === k);
   const redirect = byKey('redirect.WEBSITE.0') || byKey('WEBSITE');
@@ -119,7 +128,9 @@ function pickWebsiteRecord(records) {
   const ipfs = byKey('dweb.ipfs.hash');
   if (ipfs && ipfs.value) return { kind: 'ipfs', target: `ipfs://${ipfs.value}` };
   const aRecord = byKey('record.A.0') || byKey('A');
-  if (aRecord && aRecord.value) return { kind: 'ipv4', target: aRecord.value };
+  if (aRecord && aRecord.value && aRecord.value !== FREENAME_DEFAULT_LANDING_IP) {
+    return { kind: 'ipv4', target: aRecord.value };
+  }
   return { kind: 'none', target: null };
 }
 
@@ -138,11 +149,76 @@ function sanitizeWebsiteTarget(website) {
   return website;
 }
 
+// Freename's originally-documented rslvr.freename.io endpoint has gone dark (404 for
+// every query as of Jul 2026). Their live Domain Explorer / WHOIS tool instead reads a
+// per-token metadata document at metadata.freename.io/metadata/<tokenId>, keyed by the
+// NFT tokenId (not the human name). Since a Cloudflare Worker cannot itself query an EVM
+// chain's NFT contracts to discover an arbitrary name's tokenId cheaply, we keep a small
+// static name->tokenId map (populated for the domains this bridge actually serves) and
+// use it as a fallback whenever the primary resolver 404s. Records there use a flattened
+// "properties" object (e.g. "record.A.0") rather than a "records" array; normalizeMetadataProperties
+// below converts it into the same {key,type,value} shape the rest of this adapter expects.
+function normalizeMetadataProperties(properties) {
+  if (!properties || typeof properties !== 'object') return [];
+  return Object.entries(properties).map(([key, value]) => {
+    const type = key.includes('.') ? key.split('.')[0] : key;
+    return { key, type, value: String(value) };
+  });
+}
+
+function loadTokenIdMap(env) {
+  try {
+    const raw = cfg(env, 'FREENAME_TOKEN_ID_MAP');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 class FreenameAdapter {
   constructor(env) {
     this.env = env;
     this.resolverUrl = cfg(env, 'FREENAME_RESOLVER_URL');
+    this.metadataUrl = cfg(env, 'FREENAME_METADATA_URL');
+    this.tokenIdMap = loadTokenIdMap(env);
     this.provider = 'freename';
+  }
+
+  /** Fallback path used when the primary resolver 404s but we know this name's tokenId. */
+  async resolveViaMetadata(normalized, nowIso) {
+    const tokenId = this.tokenIdMap[normalized];
+    if (!tokenId) return null;
+    let resp;
+    try {
+      resp = await fetch(`${this.metadataUrl}/${encodeURIComponent(tokenId)}`, {
+        headers: { accept: 'application/json' },
+        cf: { cacheTtl: 0 },
+        signal: AbortSignal.timeout(6000),
+      });
+    } catch {
+      return null;
+    }
+    if (!resp.ok) return null;
+    let data;
+    try {
+      data = await resp.json();
+    } catch {
+      return null;
+    }
+    const records = normalizeMetadataProperties(data.properties);
+    const website = sanitizeWebsiteTarget(pickWebsiteRecord(records));
+    return {
+      name: normalized,
+      provider: this.provider,
+      network: data.network || null,
+      tokenId,
+      records,
+      website,
+      proof: { source: 'freename-metadata-api', resolvedAt: nowIso, blockNumber: null, owner: null },
+      ttlSeconds: Number(cfg(this.env, 'RESOLUTION_TTL_SECONDS')),
+      ok: true, error: null,
+    };
   }
 
   async supports(name) {
@@ -183,6 +259,8 @@ class FreenameAdapter {
     }
 
     if (resp.status === 404) {
+      const viaMetadata = await this.resolveViaMetadata(normalized, nowIso);
+      if (viaMetadata) return viaMetadata;
       return {
         name: normalized, provider: this.provider, network: null, tokenId: null, records: [],
         website: { kind: 'none', target: null },
