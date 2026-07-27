@@ -423,10 +423,49 @@ async function proxyRequest(request, env, ctx, url) {
   const upstreamReq = new Request(upstreamUrl, {
     method: request.method,
     headers: new Headers([...request.headers].filter(([k]) => !['host', 'cookie'].includes(k.toLowerCase()))),
-    redirect: 'follow',
+    // IMPORTANT: must be 'manual', not 'follow'. GitHub Pages 301-redirects
+    // directory-style requests missing a trailing slash (e.g. /admin ->
+    // /admin/). If we silently follow that redirect server-side, we'd
+    // serve /admin/index.html's body back to the browser while its address
+    // bar still shows /admin (no slash). The browser then resolves every
+    // relative asset on that page (admin.css, admin.js, watermark.js)
+    // against the wrong base directory, producing 404s + MIME errors and a
+    // login form that appears to "do nothing" on submit (the JS never
+    // loaded). Instead we pass the redirect back to the client so the
+    // browser's URL bar actually updates to the trailing-slash path before
+    // requesting assets.
+    redirect: 'manual',
   });
 
   const upstreamResp = await fetch(upstreamReq);
+
+  if (upstreamResp.status >= 300 && upstreamResp.status < 400) {
+    const location = upstreamResp.headers.get('location');
+    if (location) {
+      // Rewrite the upstream (GitHub Pages) host back to our own bridge
+      // origin so the browser stays on the bridge domain instead of
+      // bouncing to the raw GitHub Pages URL. GitHub Pages project sites
+      // serve from a subpath (e.g. https://user.github.io/mmkheyan/...), so
+      // that subpath prefix must also be stripped from the redirect target
+      // -- otherwise the browser gets sent to /mmkheyan/admin/ on the
+      // bridge domain, which doesn't exist there (the bridge serves the
+      // project root at /).
+      const upstreamBasePath = new URL(cfg(env, 'UPSTREAM_ORIGIN')).pathname.replace(/\/$/, '');
+      const rewrittenLocation = new URL(location, upstreamUrl);
+      rewrittenLocation.protocol = url.protocol;
+      rewrittenLocation.host = url.host;
+      if (upstreamBasePath && rewrittenLocation.pathname.startsWith(upstreamBasePath)) {
+        rewrittenLocation.pathname = rewrittenLocation.pathname.slice(upstreamBasePath.length) || '/';
+      }
+      const redirectHeaders = new Headers();
+      for (const [k, v] of upstreamResp.headers) {
+        if (!HOP_BY_HOP.has(k.toLowerCase()) && k.toLowerCase() !== 'location') redirectHeaders.set(k, v);
+      }
+      redirectHeaders.set('location', rewrittenLocation.toString());
+      return new Response(null, { status: upstreamResp.status, headers: redirectHeaders });
+    }
+  }
+
   const contentType = upstreamResp.headers.get('content-type') || '';
 
   const headers = new Headers();
