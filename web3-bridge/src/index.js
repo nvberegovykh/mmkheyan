@@ -39,6 +39,11 @@ const DEFAULTS = {
   // 'console'  = log verification details to the browser DevTools console only, no visible UI change
   // 'off'      = do not surface verification info in the page at all (SEO metadata in <head> is unaffected either way)
   BANNER_MODE: 'console',
+  // Firebase Web API key (public by design -- Firebase security relies on
+  // Auth + Firestore rules, not on hiding this value) used only to verify
+  // ID tokens server-side via Google's Identity Toolkit REST API.
+  FIREBASE_WEB_API_KEY: 'AIzaSyBazvD6hXSQv30endtGZ31BQf1xzD3S70Y',
+  ADMIN_EMAIL: 'm1mkheyan@gmail.com',
 };
 
 function cfg(env, key) {
@@ -612,6 +617,164 @@ async function handleAttemptsApi(request, env, url) {
 }
 
 // ---------------------------------------------------------------------------
+// One-way cryptographic image watermark: sign + verify
+// ---------------------------------------------------------------------------
+// The admin panel embeds a small, fixed-size payload into each public
+// artwork image's pixel data (see admin/watermark.js): a magic tag, a
+// timestamp, a random nonce, and an HMAC-SHA256 signature over
+// (contentDigest, timestamp, nonce). The secret key used to compute that
+// signature (WATERMARK_HMAC_SECRET) lives ONLY as a Worker secret binding
+// -- it is never present in any client-side file, so nobody who reads the
+// site's public source code can forge a signature that this Worker will
+// accept, and nobody can decode the embedded bytes into anything
+// meaningful without also holding the secret. This is a one-way (keyed
+// hash) scheme, not encryption: verification recomputes the HMAC forward
+// and compares byte-for-byte -- there is nothing to "decrypt".
+//
+//   POST /api/watermark-sign    (admin-only; requires a valid Firebase ID
+//                                 token for ADMIN_EMAIL in the Authorization
+//                                 header) -- called once per upload by the
+//                                 admin panel, right before embedding.
+//   POST /api/watermark-verify  (public; anyone -- including a future
+//                                 stand-alone "verify this image" page --
+//                                 can check whether an extracted payload is
+//                                 authentic, without ever learning the
+//                                 secret or being able to mint a fake one).
+// ---------------------------------------------------------------------------
+
+function bufferToHex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmacSha256Hex(secret, message) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return bufferToHex(new Uint8Array(sig));
+}
+
+/** Constant-time string comparison (equal-length hex digests). */
+function timingSafeEqualHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function watermarkMessage(digestHex, timestamp, nonceHex) {
+  return `${digestHex}:${timestamp}:${nonceHex}`;
+}
+
+const HEX64_RE = /^[0-9a-f]{64}$/i;
+const HEX16_RE = /^[0-9a-f]{16}$/i;
+
+function isValidWatermarkInput({ digestHex, timestamp, nonce }) {
+  return HEX64_RE.test(digestHex || '') && Number.isFinite(timestamp) && timestamp > 0 && HEX16_RE.test(nonce || '');
+}
+
+/** Pure decision logic, kept separate from the network call so it's unit-testable. */
+function extractAdminMatch(lookupJson, expectedEmail) {
+  if (!lookupJson || !Array.isArray(lookupJson.users) || !lookupJson.users.length) return false;
+  const user = lookupJson.users[0];
+  return typeof user.email === 'string' && user.email.toLowerCase() === String(expectedEmail || '').toLowerCase();
+}
+
+async function verifyAdminIdToken(idToken, env) {
+  if (!idToken) return false;
+  try {
+    const apiKey = cfg(env, 'FIREBASE_WEB_API_KEY');
+    const resp = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      },
+    );
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    return extractAdminMatch(data, cfg(env, 'ADMIN_EMAIL'));
+  } catch {
+    return false;
+  }
+}
+
+function watermarkJson(obj, status) {
+  return new Response(JSON.stringify(obj), {
+    status: status || 200,
+    headers: {
+      'content-type': 'application/json',
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': 'authorization, content-type',
+      'access-control-allow-methods': 'POST, OPTIONS',
+    },
+  });
+}
+
+function watermarkPreflight() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': 'authorization, content-type',
+      'access-control-allow-methods': 'POST, OPTIONS',
+      'access-control-max-age': '86400',
+    },
+  });
+}
+
+async function handleWatermarkSign(request, env) {
+  if (request.method === 'OPTIONS') return watermarkPreflight();
+  if (request.method !== 'POST') return watermarkJson({ ok: false, error: 'method_not_allowed' }, 405);
+
+  const authHeader = request.headers.get('authorization') || '';
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) return watermarkJson({ ok: false, error: 'missing_token' }, 401);
+
+  const admin = await verifyAdminIdToken(match[1], env);
+  if (!admin) return watermarkJson({ ok: false, error: 'unauthorized' }, 403);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return watermarkJson({ ok: false, error: 'bad_json' }, 400);
+  }
+  if (!isValidWatermarkInput(body || {})) return watermarkJson({ ok: false, error: 'bad_input' }, 400);
+
+  const secret = cfg(env, 'WATERMARK_HMAC_SECRET');
+  if (!secret) return watermarkJson({ ok: false, error: 'server_not_configured' }, 500);
+
+  const signatureHex = await hmacSha256Hex(secret, watermarkMessage(body.digestHex, body.timestamp, body.nonce));
+  return watermarkJson({ ok: true, signatureHex });
+}
+
+async function handleWatermarkVerify(request, env) {
+  if (request.method === 'OPTIONS') return watermarkPreflight();
+  if (request.method !== 'POST') return watermarkJson({ ok: false, error: 'method_not_allowed' }, 405);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return watermarkJson({ ok: false, valid: false, error: 'bad_json' }, 400);
+  }
+  const { digestHex, timestamp, nonce, signatureHex } = body || {};
+  if (!isValidWatermarkInput({ digestHex, timestamp, nonce }) || !HEX64_RE.test(signatureHex || '')) {
+    return watermarkJson({ ok: false, valid: false, error: 'bad_input' }, 400);
+  }
+
+  const secret = cfg(env, 'WATERMARK_HMAC_SECRET');
+  if (!secret) return watermarkJson({ ok: false, valid: false, error: 'server_not_configured' }, 500);
+
+  const expected = await hmacSha256Hex(secret, watermarkMessage(digestHex, timestamp, nonce));
+  const valid = timingSafeEqualHex(expected, String(signatureHex).toLowerCase());
+  return watermarkJson({ ok: true, valid, embeddedAt: valid ? new Date(timestamp).toISOString() : null });
+}
+
+// ---------------------------------------------------------------------------
 // Public resolver API: GET /api/resolve?name=mmkheyan.etherlink
 // ---------------------------------------------------------------------------
 async function handleResolveApi(request, env, ctx, url) {
@@ -665,6 +828,8 @@ export default {
     if (url.pathname === '/api/resolve') return handleResolveApi(request, env, ctx, url);
     if (url.pathname === '/api/track-attempt') return handleTrackAttempt(request, ctx);
     if (url.pathname === '/api/attempts') return handleAttemptsApi(request, env, url);
+    if (url.pathname === '/api/watermark-sign') return handleWatermarkSign(request, env);
+    if (url.pathname === '/api/watermark-verify') return handleWatermarkVerify(request, env);
 
     try {
       return await proxyRequest(request, env, ctx, url);
@@ -686,4 +851,9 @@ export {
   pickWebsiteRecord,
   sanitizeWebsiteTarget,
   FreenameAdapter,
+  hmacSha256Hex,
+  timingSafeEqualHex,
+  watermarkMessage,
+  extractAdminMatch,
+  isValidWatermarkInput,
 };

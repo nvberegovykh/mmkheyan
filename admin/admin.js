@@ -1,7 +1,14 @@
-/* global firebase, WATERMARK, FIREBASE_CONFIG, CLOUDINARY_CONFIG */
+/* global firebase, WATERMARK, VISIBLE_WATERMARK, FIREBASE_CONFIG, CLOUDINARY_CONFIG */
 (function () {
     const qs = (sel, el) => (el || document).querySelector(sel);
     const qsa = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+
+    // Cloudflare Worker bridge that also hosts the watermark sign/verify API.
+    const WORKER_API_BASE = 'https://mmkheyan-web3-bridge.mmkheyan-liber.workers.dev';
+    // Long-edge cap for publicly served images. The true original file
+    // chosen in the upload dialog is NEVER uploaded or stored anywhere --
+    // only this resized, watermarked copy leaves the browser.
+    const MAX_LONG_EDGE = 1800;
 
     // Legacy items store image paths relative to the SITE ROOT (e.g.
     // "paintings/1.png", meant to resolve to /paintings/1.png). This admin
@@ -194,7 +201,7 @@
         });
     }
 
-    // ---- Cloudinary upload with invisible watermark ----
+    // ---- Cloudinary upload with crypto-signed + visible watermark ----
     async function uploadToCloudinary(blob) {
         const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`;
         const form = new FormData();
@@ -210,18 +217,88 @@
         return json.secure_url;
     }
 
-    function watermarkText() {
-        return `© Meruzhan Mkheyan ${new Date().getFullYear()}`;
+    function visibleWatermarkLabel() {
+        return `© MERUZHAN MKHEYAN`;
     }
 
-    async function processFileToSrc(file) {
-        const status = qs('#uploadStatus');
-        status.textContent = 'Embedding watermark...';
-        const watermarked = await WATERMARK.embedWatermark(file, watermarkText());
-        status.textContent = 'Uploading...';
+    function loadImageEl(file) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+            img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+            img.src = url;
+        });
+    }
+
+    /** Downscale to a long-edge cap on a fresh canvas. Never touches/keeps the original file. */
+    function resizeToCanvas(img, maxLongEdge) {
+        const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+        const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        return { canvas, ctx };
+    }
+
+    /** Ask the Worker (admin-only, Firebase-auth-checked) to sign this content digest. */
+    async function requestSignature(digestHex, timestamp, nonceHex) {
+        const user = auth.currentUser;
+        if (!user) throw new Error('Not signed in.');
+        const idToken = await user.getIdToken();
+        const res = await fetch(`${WORKER_API_BASE}/api/watermark-sign`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'authorization': `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ digestHex, timestamp, nonce: nonceHex }),
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Watermark signing failed: ' + (text || res.status));
+        }
+        const json = await res.json();
+        if (!json.ok || !json.signatureHex) throw new Error('Watermark signing returned no signature.');
+        return json.signatureHex;
+    }
+
+    /**
+     * Runs the full resize -> visible-watermark -> crypto-sign -> embed ->
+     * upload pipeline for one file. Pass onProgress(msg) to report status
+     * somewhere other than the single-item form's #uploadStatus (used by
+     * the batch uploader so each file gets its own progress line instead
+     * of everything fighting over one status field).
+     */
+    async function processFileToSrc(file, onProgress) {
+        const report = onProgress || ((msg) => { qs('#uploadStatus').textContent = msg; });
+
+        report('Preparing image...');
+        const img = await loadImageEl(file);
+        const { canvas, ctx } = resizeToCanvas(img, MAX_LONG_EDGE);
+
+        report('Applying visible signature...');
+        VISIBLE_WATERMARK.applySmartTiledMark(ctx, canvas, visibleWatermarkLabel());
+
+        report('Computing content signature...');
+        const prepared = await WATERMARK.prepareForSigning(canvas, ctx);
+        const timestamp = Date.now();
+        const nonceHex = WATERMARK.randomNonceHex();
+
+        report('Requesting cryptographic signature...');
+        const signatureHex = await requestSignature(prepared.digestHex, timestamp, nonceHex);
+
+        report('Embedding signature...');
+        const watermarked = await WATERMARK.embedSignature(prepared, timestamp, nonceHex, signatureHex);
+
+        report('Uploading...');
         const url = await uploadToCloudinary(watermarked);
-        status.textContent = 'Uploaded.';
-        setTimeout(() => { status.textContent = ''; }, 2000);
+        report('Uploaded.');
+        if (!onProgress) {
+            setTimeout(() => { qs('#uploadStatus').textContent = ''; }, 2000);
+        }
         return url;
     }
 
@@ -273,4 +350,126 @@
             status.textContent = 'Save failed: ' + err.message;
         }
     });
+
+    // ---- Batch Upload: process many files one after another, no per-file
+    // click required. Each successful upload immediately becomes a real
+    // Firestore artwork doc (with a placeholder name derived from the
+    // filename, everything else blank) so the client can start editing
+    // details on already-finished items via the normal "Edit" button
+    // while the rest of the batch keeps processing in the background. ----
+    const batchForm = qs('#batchForm');
+    if (batchForm) {
+        batchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const filesInput = qs('#batchFiles');
+            const typeSelect = qs('#batchType');
+            const status = qs('#batchStatus');
+            const progressList = qs('#batchProgressList');
+            const submitBtn = qs('#batchUploadBtn');
+
+            const files = Array.from(filesInput.files || []);
+            if (!files.length) {
+                status.textContent = 'Choose one or more image files first.';
+                return;
+            }
+
+            const type = typeSelect.value;
+            filesInput.disabled = true;
+            submitBtn.disabled = true;
+            progressList.innerHTML = '';
+            status.textContent = `Processing ${files.length} file(s)... you can keep editing items above while this runs.`;
+
+            const rows = files.map((file) => {
+                const li = document.createElement('li');
+                li.textContent = `${file.name}: queued`;
+                progressList.appendChild(li);
+                return li;
+            });
+
+            // Compute the starting order once up front rather than re-reading
+            // state.items each iteration -- the Firestore onSnapshot listener
+            // updates state.items asynchronously and may lag behind our own
+            // writes within this loop.
+            let nextOrder = state.items.reduce((m, it) => Math.max(m, it.order || 0), -1) + 1;
+            let completed = 0;
+            let failed = 0;
+
+            // Sequential on purpose: keeps per-file progress accurate and
+            // avoids hammering the signing endpoint / Cloudinary at once,
+            // but nothing here blocks the rest of the admin UI -- items
+            // already uploaded show up live and are editable immediately.
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const li = rows[i];
+                try {
+                    const src = await processFileToSrc(file, (msg) => { li.textContent = `${file.name}: ${msg}`; });
+                    const baseName = file.name.replace(/\.[^./]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Untitled';
+                    await db.collection('artworks').add({
+                        type,
+                        name: baseName,
+                        description: '',
+                        size: '',
+                        material: '',
+                        technique: '',
+                        owner: '',
+                        src,
+                        order: nextOrder++,
+                    });
+                    li.textContent = `${file.name}: \u2713 uploaded \u2014 edit its details above whenever you're ready`;
+                    completed++;
+                } catch (err) {
+                    li.textContent = `${file.name}: \u2717 failed \u2014 ${err.message}`;
+                    failed++;
+                }
+            }
+
+            status.textContent = `Batch complete: ${completed} uploaded${failed ? `, ${failed} failed` : ''}.`;
+            filesInput.value = '';
+            filesInput.disabled = false;
+            submitBtn.disabled = false;
+        });
+    }
+
+    // ---- Verify Authenticity tool (public verify endpoint; no admin auth needed) ----
+    const verifyForm = qs('#verifyForm');
+    if (verifyForm) {
+        verifyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const status = qs('#verifyStatus');
+            const fileInput = qs('#verifyFile');
+            const urlInput = qs('#verifyUrl');
+            status.textContent = 'Checking...';
+            try {
+                const source = (fileInput.files && fileInput.files[0]) ? fileInput.files[0] : urlInput.value.trim();
+                if (!source) {
+                    status.textContent = 'Choose a file or enter an image URL.';
+                    return;
+                }
+                const extracted = await WATERMARK.extractForVerification(source);
+                if (!extracted) {
+                    status.textContent = 'No signature found \u2014 not from this gallery, or the image was re-encoded (e.g. re-saved as JPEG) after upload.';
+                    return;
+                }
+                const res = await fetch(`${WORKER_API_BASE}/api/watermark-verify`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({
+                        digestHex: extracted.digestHex,
+                        timestamp: extracted.timestamp,
+                        nonce: extracted.nonceHex,
+                        signatureHex: extracted.signatureHex,
+                    }),
+                });
+                const json = await res.json();
+                if (json.valid) {
+                    const when = new Date(json.embeddedAt).toLocaleString();
+                    status.textContent = `\u2713 Genuine \u2014 signed by this gallery on ${when}.`;
+                } else {
+                    status.textContent = '\u2717 Not genuine \u2014 signature does not match (image was altered, or is not from this gallery).';
+                }
+            } catch (err) {
+                status.textContent = 'Verification error: ' + err.message;
+            }
+        });
+    }
 })();

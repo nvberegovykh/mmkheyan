@@ -43,7 +43,7 @@
     <main id="adminMain" class="admin-main" style="display:none;">
         <section>
             <h2>Content Items</h2>
-            <p class="note">Uploaded images are automatically saved to the gallery and get an invisible watermark baked in — no visible mark, but ownership is embedded in the pixel data.</p>
+            <p class="note">Uploads are automatically resized, get a subtle low-opacity signature tiled across the image, and have a one-way cryptographic (HMAC) signature embedded invisibly in the pixel data — proof of authenticity that only this admin panel can create. The original file you choose is never uploaded or stored anywhere; only this processed copy leaves your browser.</p>
             <form id="itemForm" class="controls">
                 <label>
                     Type
@@ -103,6 +103,7 @@
                             <option value="en">EN</option>
                             <option value="ru">RU</option>
                             <option value="ka">KA</option>
+                            <option value="hy">HY</option>
                         </select>
                     </label>
                     <label>
@@ -119,6 +120,48 @@
             </details>
             <div id="itemsList" class="items-list"></div>
         </section>
+
+        <section>
+            <h2>Batch Upload</h2>
+            <p class="note">Select several images at once. Each one is resized, gets the tiled visible signature, and has the cryptographic signature embedded and uploaded automatically, one after another — no need to click or wait between files. As each finishes it appears in Content Items above; click "Edit" on it whenever you're ready to fill in name, size, material, etc.</p>
+            <form id="batchForm" class="controls">
+                <label>
+                    Type (applies to this whole batch)
+                    <select id="batchType">
+                        <option value="painting">Painting</option>
+                        <option value="sculpture">Sculpture</option>
+                    </select>
+                </label>
+                <label>
+                    Image files
+                    <input type="file" id="batchFiles" accept="image/*" multiple>
+                </label>
+                <div class="actions">
+                    <button type="submit" id="batchUploadBtn">Upload all</button>
+                    <span id="batchStatus" class="note"></span>
+                </div>
+            </form>
+            <ul id="batchProgressList" class="batch-progress-list"></ul>
+        </section>
+
+        <section>
+            <h2>Verify Authenticity</h2>
+            <p class="note">Check whether an image file or URL carries a genuine, unaltered cryptographic signature from this admin panel. This is a hard yes/no check backed by a secret key that never leaves the server — it cannot be spoofed by editing the image or its metadata.</p>
+            <form id="verifyForm" class="controls">
+                <label>
+                    Image file
+                    <input type="file" id="verifyFile" accept="image/*">
+                </label>
+                <label>
+                    Or image URL
+                    <input type="url" id="verifyUrl" placeholder="https://...">
+                </label>
+                <div class="actions">
+                    <button type="submit" id="verifyBtn">Check authenticity</button>
+                    <span id="verifyStatus" class="note"></span>
+                </div>
+            </form>
+        </section>
     </main>
 
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
@@ -126,6 +169,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
     <script src="../firebase-config.js"></script>
     <script src="watermark.js"></script>
+    <script src="visible-watermark.js"></script>
     <script src="admin.js"></script>
 </body>
 </html>

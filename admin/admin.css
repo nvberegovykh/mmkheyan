@@ -23,5 +23,7 @@ button:hover { background: #333; }
 button.secondary { background: #666; }
 #loginScreen { max-width: 420px; }
 #loginError { min-height: 16px; }
+.batch-progress-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.batch-progress-list li { background: white; border: 1px solid #eaeaea; border-radius: 8px; padding: 8px 12px; font-size: 12px; }
 
 
