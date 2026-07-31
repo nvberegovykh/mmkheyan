@@ -219,6 +219,27 @@
         return `© MERUZHAN MKHEYAN`;
     }
 
+    /**
+     * Save the exact signed/watermarked file to the admin's own machine.
+     * Cloudinary is the only remote copy of this file -- if that account,
+     * image, or the Firestore doc pointing at it is ever lost, there is
+     * otherwise no way to recover the signed original. This makes a local
+     * backup automatic on every upload, no extra click required.
+     */
+    function downloadSignedCopy(blob, sourceFileName) {
+        const base = (sourceFileName || 'artwork').replace(/\.[^./]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '_');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `${base}_signed_${stamp}.png`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
     function loadImageEl(file) {
         return new Promise((resolve, reject) => {
             const url = URL.createObjectURL(file);
@@ -290,6 +311,9 @@
 
         report('Embedding signature...');
         const watermarked = await WATERMARK.embedSignature(prepared, timestamp, nonceHex, signatureHex);
+
+        report('Saving local backup of signed copy...');
+        downloadSignedCopy(watermarked, file.name);
 
         report('Uploading...');
         const url = await uploadToCloudinary(watermarked);
