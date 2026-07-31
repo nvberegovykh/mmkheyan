@@ -263,7 +263,7 @@
         const saved = localStorage.getItem('lang');
         if (saved) state.lang = saved; else {
             const browser = (navigator.language || 'en').slice(0,2);
-            if (['en','ru','ka','hy'].includes(browser)) state.lang = browser;
+            if (['en','ru','hy'].includes(browser)) state.lang = browser;
         }
         select.value = state.lang;
         if (prev !== state.lang) {
@@ -313,7 +313,7 @@
                 const settingsDoc = await db.collection('settings').doc('site').get();
                 if (settingsDoc.exists) {
                     const s = settingsDoc.data();
-                    if (s.defaultLang && ['en','ru','ka'].includes(s.defaultLang)) {
+                    if (s.defaultLang && ['en','ru'].includes(s.defaultLang)) {
                         state.lang = s.defaultLang;
                     }
                     state.autoTranslate = s.autoTranslate === false ? false : true;
