@@ -599,6 +599,17 @@ async function proxyRequest(request, env, ctx, url) {
 // ---------------------------------------------------------------------------
 // robots.txt / sitemap.xml
 // ---------------------------------------------------------------------------
+// IndexNow (api.indexnow.org, fans out to Bing/Yandex/Seznam/Naver) requires a
+// key file hosted at https://<domain>/<key>.txt containing exactly the key,
+// proving the submitter controls the domain. Pure infra addition -- no
+// visible text, no branding, does not alter the pass-through behavior of any
+// other route. Value is a fixed random token, not a secret; safe to inline.
+const INDEXNOW_KEY = 'ef34c3aa80afc1f25dd1f4ed0c1fa566';
+
+function indexNowKeyResponse() {
+  return new Response(INDEXNOW_KEY, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+}
+
 function robotsResponse(origin) {
   const body = `User-agent: *\nAllow: /\nSitemap: ${origin}/sitemap.xml\n`;
   return new Response(body, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
@@ -888,6 +899,7 @@ export default {
 
     if (url.pathname === '/robots.txt') return robotsResponse(url.origin);
     if (url.pathname === '/sitemap.xml') return sitemapResponse(url.origin);
+    if (url.pathname === `/${INDEXNOW_KEY}.txt`) return indexNowKeyResponse();
     if (url.pathname === '/api/resolve') return handleResolveApi(request, env, ctx, url);
     if (url.pathname === '/api/track-attempt') return handleTrackAttempt(request, ctx);
     if (url.pathname === '/api/attempts') return handleAttemptsApi(request, env, url);
